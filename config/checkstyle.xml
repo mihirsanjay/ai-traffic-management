@@ -1,0 +1,166 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+    "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+    "https://checkstyle.org/dtds/configuration_1_3.dtd">
+
+<!--
+  Checkstyle rules for this project.
+
+  Derived from docs/coding-standards.md rather than adopting a stock ruleset
+  wholesale. Every rule here maps to something that document actually asks for.
+  Formatting is NOT checked here - Spotless owns formatting via
+  google-java-format, and having two tools argue about layout wastes everyone's
+  time.
+
+  severity=warning combined with <violationSeverity>warning</violationSeverity>
+  in the POM means any violation fails the build.
+-->
+<module name="Checker">
+  <property name="severity" value="warning"/>
+  <property name="fileExtensions" value="java, properties, xml"/>
+
+  <!-- Files must end with a newline. -->
+  <module name="NewlineAtEndOfFile"/>
+
+  <!-- Tabs are a formatting decision google-java-format already makes; this
+       catches any that slip in through generated or hand-edited files. -->
+  <module name="FileTabCharacter">
+    <property name="eachLine" value="true"/>
+  </module>
+
+  <module name="LineLength">
+    <property name="max" value="120"/>
+    <property name="ignorePattern" value="^package.*|^import.*|href|http://|https://"/>
+  </module>
+
+  <module name="TreeWalker">
+
+    <!-- ================= Imports ================= -->
+
+    <!-- "No star imports" - they hide what a class actually depends on and
+         break when two packages export the same simple name. -->
+    <module name="AvoidStarImport"/>
+    <module name="UnusedImports">
+      <property name="processJavadoc" value="true"/>
+    </module>
+    <module name="RedundantImport"/>
+    <module name="IllegalImport">
+      <!-- sun.* is not public API. junit.framework is JUnit 3; this project
+           uses JUnit 5 per coding-standards.md. -->
+      <property name="illegalPkgs" value="sun, junit.framework"/>
+    </module>
+
+    <!-- ================= Naming ================= -->
+
+    <module name="PackageName">
+      <property name="format" value="^[a-z]+(\.[a-z][a-z0-9]*)*$"/>
+    </module>
+    <module name="TypeName"/>
+    <module name="MethodName"/>
+    <module name="LocalVariableName"/>
+    <module name="ParameterName"/>
+    <module name="MemberName"/>
+    <module name="ConstantName"/>
+    <module name="StaticVariableName"/>
+
+    <!-- ================= Error handling =================
+         coding-standards.md: "Never swallow an exception. No empty catch
+         blocks." An empty catch is how a bug becomes invisible. -->
+
+    <module name="EmptyCatchBlock">
+      <!-- Escape hatch: name the variable `expected` or `ignored` AND write a
+           comment saying why swallowing is correct. -->
+      <property name="exceptionVariableName" value="expected|ignored"/>
+      <property name="commentFormat" value=".*"/>
+    </module>
+    <module name="IllegalCatch">
+      <!-- Catching Throwable/Error swallows OutOfMemoryError and friends.
+           Catching raw Exception hides what is actually being handled. -->
+      <property name="illegalClassNames"
+                value="java.lang.Throwable, java.lang.Error, java.lang.RuntimeException"/>
+    </module>
+    <module name="IllegalThrows">
+      <property name="illegalClassNames"
+                value="java.lang.Throwable, java.lang.Error, java.lang.RuntimeException"/>
+    </module>
+
+    <!-- ================= Correctness ================= -->
+
+    <module name="EqualsHashCode"/>
+    <module name="CovariantEquals"/>
+    <module name="StringLiteralEquality"/>
+    <module name="NoFinalizer"/>
+    <module name="SimplifyBooleanExpression"/>
+    <module name="SimplifyBooleanReturn"/>
+    <module name="FallThrough"/>
+    <module name="MissingSwitchDefault"/>
+    <module name="DefaultComesLast"/>
+    <module name="MultipleVariableDeclarations"/>
+    <module name="OneStatementPerLine"/>
+
+    <!-- Braces always, even for one-liners. The classic goto-fail bug was
+         exactly this. -->
+    <module name="NeedBraces"/>
+
+    <!-- ================= Design ================= -->
+
+    <!-- Utility classes must not be instantiable. -->
+    <module name="HideUtilityClassConstructor"/>
+
+    <!-- Public fields break encapsulation; use accessors or a record. -->
+    <module name="VisibilityModifier">
+      <property name="protectedAllowed" value="false"/>
+      <property name="allowPublicFinalFields" value="false"/>
+      <property name="allowPublicImmutableFields" value="false"/>
+    </module>
+
+    <!-- ================= Complexity =================
+         Thresholds are generous. They exist to catch methods that have grown
+         genuinely unreadable, not to nag about ordinary code. -->
+
+    <module name="CyclomaticComplexity">
+      <property name="max" value="12"/>
+    </module>
+    <module name="MethodLength">
+      <property name="max" value="80"/>
+      <property name="countEmpty" value="false"/>
+    </module>
+    <module name="ParameterNumber">
+      <property name="max" value="8"/>
+    </module>
+    <module name="NestedIfDepth">
+      <property name="max" value="3"/>
+    </module>
+    <module name="NestedTryDepth">
+      <property name="max" value="2"/>
+    </module>
+
+    <!-- ================= Modifiers ================= -->
+
+    <module name="ModifierOrder"/>
+    <module name="RedundantModifier"/>
+
+    <!-- ================= Comments =================
+         Javadoc on public APIs, per coding-standards.md. Deliberately NOT
+         required on getters, setters, or test methods - Javadoc that restates
+         the method name is noise that goes stale. -->
+
+    <module name="JavadocMethod">
+      <property name="accessModifiers" value="public"/>
+      <property name="allowMissingParamTags" value="true"/>
+      <property name="allowMissingReturnTag" value="true"/>
+    </module>
+    <module name="InvalidJavadocPosition"/>
+
+    <!-- Suppression via @SuppressWarnings("checkstyle:RuleName") for the rare
+         justified exception. -->
+    <module name="SuppressWarningsHolder"/>
+  </module>
+
+  <module name="SuppressWarningsFilter"/>
+
+  <!-- Generated sources are not ours to style. -->
+  <module name="BeforeExecutionExclusionFileFilter">
+    <property name="fileNamePattern" value=".*[\\/]generated-sources[\\/].*"/>
+  </module>
+</module>

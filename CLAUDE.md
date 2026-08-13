@@ -10,6 +10,7 @@ owner defines throttling rules for their APIs, those rules are deployed to a
 distributed traffic layer (Envoy), and the resulting traffic is observed and
 analyzed. An AI agent layer is added last, on top of the working platform.
 
+**Repository:** https://github.com/mihirsanjay/ai-traffic-management
 **Status: pre-code.** Phase 0 has not started — docs only, no build or source yet.
 
 ## Tech stack
