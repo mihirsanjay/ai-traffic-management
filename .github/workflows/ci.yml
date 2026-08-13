@@ -1,8 +1,5 @@
 # CI: build, test, and quality gates on every PR.
 #
-# NOTE: This workflow will fail until Phase 0 creates the Maven project.
-# It is committed now so the pipeline exists from the first real commit.
-#
 # The JDK is pinned deliberately. Local development runs JDK 26 while the build
 # targets Java 21 via <release>21</release>; pinning here keeps CI bytecode
 # identical to local rather than tracking whatever "latest" happens to be.

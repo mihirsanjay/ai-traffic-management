@@ -11,7 +11,8 @@ distributed traffic layer (Envoy), and the resulting traffic is observed and
 analyzed. An AI agent layer is added last, on top of the working platform.
 
 **Repository:** https://github.com/mihirsanjay/ai-traffic-management
-**Status: pre-code.** Phase 0 has not started — docs only, no build or source yet.
+**Status: Phase 0 in progress.** The build, quality gates, and local
+infrastructure work. Phase 1 (`rule-service/`) has not started.
 
 ## Tech stack
 
@@ -39,17 +40,23 @@ Full service breakdown, module layout, and event contracts: @docs/architecture.m
 
 ## Build and test commands
 
-> **Not yet runnable.** These are the intended commands for the Phase 0 build.
-> They have not been executed against a real build because none exists yet.
-> Verify and update this section when Phase 0 lands.
-
 ```bash
-mvn clean verify                              # full build, tests, quality gates
-mvn -pl rule-service test                     # one module's tests
-mvn -pl rule-service test -Dtest=RuleServiceTest#createsNewVersion
-mvn spotless:apply                            # auto-format
-docker compose -f infra/docker-compose.yml up # local Postgres, Redis, Kafka
+mvn clean verify                                 # full build, tests, quality gates
+mvn -pl common test                              # one module's tests
+mvn -pl common test -Dtest=PlatformConstantsTest # a single test class
+mvn spotless:apply                               # auto-format
+docker compose -f infra/docker-compose.yml up -d # local Postgres, Redis, Kafka
+docker compose -f infra/docker-compose.yml down  # stop (add -v to wipe data)
 ```
+
+Commands above are verified working. Module-scoped examples use `common`
+because it is the only module so far; substitute `rule-service` once Phase 1
+creates it.
+
+Local infrastructure — ports, topics, databases, troubleshooting — is
+documented in @infra/README.md. Integration tests do **not** use that stack;
+Testcontainers starts its own containers and only needs the Docker daemon
+running.
 
 ## Local environment
 
@@ -57,9 +64,10 @@ docker compose -f infra/docker-compose.yml up # local Postgres, Redis, Kafka
 | --- | --- |
 | JDK | **26.0.1** installed; build targets **21** via `<release>21</release>`. Do not install a second JDK. Pin the JDK in CI. |
 | `JAVA_HOME` | **unset** — should be set |
-| Docker | Installed, but **daemon must be started** before Testcontainers work |
-| `gh` CLI | **not installed** — required for PRs; Phase 0 task |
+| Docker | Desktop 4.76 / Engine 29.5, Compose v5.1. **Daemon must be running** before Testcontainers or `docker compose` work |
+| `gh` CLI | **2.97.0 installed** |
 | `jq` | **not installed** — hooks must not depend on it |
+| `clean` fails | The repo sits in OneDrive, and the IDE Java language servers hold handles on `target/`. `mvn clean` intermittently fails with "Failed to delete ...\target". Delete the directory and re-run; it is a file lock, never a code problem. |
 
 ## Working agreements
 
