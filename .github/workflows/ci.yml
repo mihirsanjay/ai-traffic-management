@@ -1,0 +1,64 @@
+# CI: build, test, and quality gates on every PR.
+#
+# NOTE: This workflow will fail until Phase 0 creates the Maven project.
+# It is committed now so the pipeline exists from the first real commit.
+#
+# The JDK is pinned deliberately. Local development runs JDK 26 while the build
+# targets Java 21 via <release>21</release>; pinning here keeps CI bytecode
+# identical to local rather than tracking whatever "latest" happens to be.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: '21'
+  JAVA_DISTRIBUTION: 'temurin'
+
+jobs:
+  build:
+    name: Build and verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          cache: maven
+
+      # Runs the full lifecycle: compile, unit tests, integration tests
+      # (Testcontainers - Docker is available on ubuntu-latest), plus
+      # Spotless, Checkstyle, SpotBugs, JaCoCo, and Enforcer.
+      - name: Build, test, and check
+        run: mvn --batch-mode --no-transfer-progress clean verify
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            **/target/surefire-reports/
+            **/target/failsafe-reports/
+          retention-days: 7
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-coverage
+          path: '**/target/site/jacoco/'
+          retention-days: 7

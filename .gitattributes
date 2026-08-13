@@ -1,0 +1,25 @@
+# Normalize line endings: development happens on Windows, CI runs on Linux.
+# Without this, every file round-trips as a whole-file diff.
+* text=auto eol=lf
+
+# Windows-only files keep CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Shell scripts must stay LF - CRLF breaks the shebang and the script
+# fails with an unhelpful "bad interpreter" error.
+*.sh text eol=lf
+mvnw text eol=lf
+
+# Binary: never touch
+*.jar binary
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz binary
+
+# Generated files - collapse in PR diffs
+*.lock linguist-generated=true
