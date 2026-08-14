@@ -1,0 +1,180 @@
+# Local development infrastructure: PostgreSQL, Redis, Kafka.
+#
+# This is the developer's machine only. It is NOT a model of production --
+# production runs on EKS with RDS, ElastiCache, and MSK (Phase 5). The goal
+# here is that a clean clone can run integration tests and the services
+# locally without installing anything but Docker.
+#
+#   docker compose -f infra/docker-compose.yml up -d
+#   docker compose -f infra/docker-compose.yml down       # keeps data
+#   docker compose -f infra/docker-compose.yml down -v    # wipes data
+#
+# Image tags are pinned to exact patch versions. `latest` would make the
+# local environment drift from CI and from other machines, which is exactly
+# the class of "works on my machine" this file exists to prevent.
+#
+# Credentials here are deliberately weak and deliberately committed: they
+# guard nothing but a throwaway local container bound to loopback. Real
+# secrets never live in this repository -- see .gitignore.
+
+name: ai-traffic-management
+
+services:
+  postgres:
+    image: postgres:18.1-alpine
+    container_name: atm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-traffic}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-traffic}
+      POSTGRES_DB: ${POSTGRES_DB:-traffic}
+      # Postgres only applies initdb args on first initialization. Explicit
+      # UTC and C collation keep timestamp and ordering behaviour identical
+      # across developer machines with different host locales.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      # Bound to loopback rather than 0.0.0.0 so the database is not exposed
+      # to the local network by a laptop on untrusted wifi.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Each service owns its own logical database; one Postgres instance is
+      # a local convenience, not shared-database coupling between services.
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # -U and -d are required: without them pg_isready checks the *root*
+      # user and default database, which can report ready before the real
+      # database exists.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-traffic} -d ${POSTGRES_DB:-traffic} -h 127.0.0.1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    command:
+      # Louder logging than the default, because local debugging of a slow
+      # or deadlocked query is the whole reason to run Postgres locally.
+      - "postgres"
+      - "-c"
+      - "log_statement=ddl"
+      - "-c"
+      - "log_min_duration_statement=500"
+      - "-c"
+      - "max_connections=200"
+
+  redis:
+    image: redis:8.2-alpine
+    container_name: atm-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      # grep for PONG rather than trusting the exit code: redis-cli exits 0
+      # even when the server replies with an error such as LOADING.
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    command:
+      # Rate-limit counters (Bucket4j, Phase 1) are reconstructible state,
+      # not a source of truth -- losing them on restart costs one window of
+      # limits. appendonly keeps them across the restarts that happen while
+      # developing, without pretending Redis is durable storage.
+      - "redis-server"
+      - "--appendonly"
+      - "yes"
+      - "--maxmemory"
+      - "256mb"
+      # Evicting the least-recently-used key beats refusing writes when a
+      # runaway test fills memory; a lost counter degrades, a write error
+      # takes the request path down.
+      - "--maxmemory-policy"
+      - "allkeys-lru"
+
+  kafka:
+    # KRaft mode -- no ZooKeeper. ZooKeeper was removed in Kafka 4.x, so a
+    # single combined broker+controller process is now the ordinary way to
+    # run one node.
+    image: apache/kafka:4.1.0
+    container_name: atm-kafka
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${KAFKA_PORT:-9092}:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
+      # Two listeners, and the distinction matters. Clients on the host
+      # connect via localhost:9092; containers on this network connect via
+      # kafka:29092. A broker advertises the address a client should use to
+      # reach it *after* the initial metadata call, so a single listener
+      # would necessarily break one of those two callers.
+      KAFKA_LISTENERS: HOST://0.0.0.0:9092,DOCKER://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: HOST://localhost:9092,DOCKER://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: HOST:PLAINTEXT,DOCKER:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: DOCKER
+
+      # Single broker: nothing can be replicated to a second node, so every
+      # replication factor must be 1 or the internal topics never create and
+      # the broker wedges on first use.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+
+      # Default is 3s, which delays the first consumer group's rebalance on
+      # every fresh start for no benefit on a single-node local broker.
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+      # Auto-creation off. Topics are part of the event contract
+      # (architecture.md); a typo'd topic name must fail loudly rather than
+      # silently creating a second topic nobody consumes.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_LOG_RETENTION_HOURS: 24
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:-5L6g3nShT-eMCtK--X86sw}
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      # Listing the broker's own API versions proves it is accepting client
+      # connections. A TCP port check would pass while the broker is still
+      # replaying its log and rejecting requests.
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  # One-shot topic provisioning. Runs after the broker is healthy, creates
+  # the topics from architecture.md, then exits -- `docker compose ps` will
+  # show it as Exited(0), which is success, not a failure.
+  #
+  # Topics are created here rather than by the services that use them so
+  # that partition count and retention are declared in one reviewable place
+  # instead of being an accident of whichever service started first.
+  kafka-topics:
+    image: apache/kafka:4.1.0
+    container_name: atm-kafka-topics
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "/opt/scripts/create-topics.sh"]
+    environment:
+      BOOTSTRAP_SERVER: kafka:29092
+    volumes:
+      - ./kafka/create-topics.sh:/opt/scripts/create-topics.sh:ro
+    restart: "no"
+
+volumes:
+  postgres-data:
+  redis-data:
+  kafka-data:

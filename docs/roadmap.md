@@ -54,12 +54,12 @@ Turn an empty repo into one that builds, tests, and enforces standards.
 
 ### Done when
 
-- [ ] `mvn clean verify` passes from a clean clone.
-- [ ] A deliberate formatting violation fails the build.
-- [ ] `docker compose up` gives working Postgres, Redis, and Kafka.
+- [x] `mvn clean verify` passes from a clean clone.
+- [x] A deliberate formatting violation fails the build.
+- [x] `docker compose up` gives working Postgres, Redis, and Kafka.
 - [ ] CI runs on every PR and blocks merge on failure.
 - [ ] Direct pushes to `main` are rejected.
-- [ ] The build commands in `CLAUDE.md` have been **run and verified**, and the
+- [x] The build commands in `CLAUDE.md` have been **run and verified**, and the
       pending-scaffolding caveat is removed.
 
 ### Git

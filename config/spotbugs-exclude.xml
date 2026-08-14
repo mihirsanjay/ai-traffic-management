@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SpotBugs exclusions.
+
+  Keep this file SHORT. Every entry is a bug pattern this project has decided
+  not to hear about, and each one is a place a real bug could hide. Add an
+  exclusion only with a comment explaining why the warning is wrong here -
+  never merely because it is inconvenient.
+-->
+<FindBugsFilter>
+
+  <!-- Test code: assertions and fixtures legitimately trip patterns that
+       matter in production code (unread fields, hardcoded values, ignored
+       return values from builders). -->
+  <Match>
+    <Source name="~.*[\\/]src[\\/]test[\\/].*"/>
+  </Match>
+
+  <!-- Generated sources are not ours to fix. -->
+  <Match>
+    <Source name="~.*[\\/]generated-sources[\\/].*"/>
+  </Match>
+
+  <!--
+    EI_EXPOSE_REP / EI_EXPOSE_REP2 on records.
+
+    SpotBugs flags records that hold references to mutable types (List, Date,
+    arrays) because the record does not defensively copy. The project's answer
+    per coding-standards.md is immutability by convention: records carry
+    immutable collections (List.copyOf) and java.time types.
+
+    Scoped to records only - the warning stays active for ordinary classes,
+    where it usually indicates a real leak.
+  -->
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    <Source name="~.*[\\/]records[\\/].*"/>
+  </Match>
+
+</FindBugsFilter>
