@@ -73,6 +73,14 @@ running.
 
 - **Phases are sequential** — do not start a phase before the previous one meets
   its exit criteria. The AI layer is LAST. See @docs/roadmap.md.
+- **AWS/EKS/Terraform is deferred** to an optional Phase 5b. Phase 5 targets
+  **local Kubernetes**, which teaches every orchestration concept that matters
+  without the cost and operational detour. Nothing in phases 0–6 may depend on
+  AWS.
+- **Enforcement belongs in the data plane.** Bucket4j (Phase 1) protects the
+  control plane's *own* API and is a deliberate stepping stone; Envoy takes over
+  data-plane enforcement in Phase 3. Simulated business services never contain
+  throttling code — see the agreement below.
 - **Every change ships with tests.** Kafka consumers additionally need a test
   proving duplicate delivery is safe.
 - **Quality gates fail the build**, not warn: Spotless, Checkstyle, SpotBugs,
@@ -94,6 +102,10 @@ running.
 - **Conventional Commits** — `type(scope): subject`, scope = module name.
 - A `Stop` hook suggests the next git action; `/git-flow` performs it. The hook
   only ever suggests — it never commits, pushes, or tags on its own.
+- A second `Stop` hook (`learning-map.sh`) writes to **`docs/learning-map.md`
+  only**, flipping status cells when a phase's exit criteria are all ticked in
+  `roadmap.md`. It never touches source, never commits, and never writes the
+  prose — that is written by hand at the end of each phase.
 - **Never run `git init`, commit, push, or tag unless asked in that turn.**
 
 ## Detailed documentation
@@ -102,6 +114,8 @@ running.
 - @docs/tech-stack.md — every technology and the problem it solves
 - @docs/coding-standards.md — Java/Spring rules, resilience, observability, testing
 - @docs/roadmap.md — phases 0–6: what gets built, exit criteria, git per phase
+- @docs/learning-map.md — the same plan by concept: what each phase teaches, and
+  what it actually taught. Status is hook-maintained; the write-ups are not.
 - @docs/git-workflow.md — branching, commits, PRs, tags, versioning
 - @docs/adr/ — architecture decision records
 
