@@ -8,6 +8,12 @@
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/git-reminder.sh\"",
             "timeout": 10,
             "statusMessage": "Checking git state..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/learning-map.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking phase progress..."
           }
         ]
       }

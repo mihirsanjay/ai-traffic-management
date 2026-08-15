@@ -29,8 +29,10 @@ the Deployment Service?"
 | `simulators/{orders,payments,inventory}-service/` | Phase 3 |
 | `analytics-service/`               | Phase 3       |
 | `infra/envoy/`                     | Phase 3       |
-| `infra/k8s/`, `infra/terraform/`   | Phase 5       |
+| `infra/chaos/`                     | Phase 4       |
+| `infra/k8s/`                       | Phase 5       |
 | `agents/`                          | Phase 6       |
+| `infra/terraform/`                 | Phase 5b *(deferred)* |
 
 ---
 
@@ -57,8 +59,8 @@ Turn an empty repo into one that builds, tests, and enforces standards.
 - [x] `mvn clean verify` passes from a clean clone.
 - [x] A deliberate formatting violation fails the build.
 - [x] `docker compose up` gives working Postgres, Redis, and Kafka.
-- [ ] CI runs on every PR and blocks merge on failure.
-- [ ] Direct pushes to `main` are rejected.
+- [x] CI runs on every PR and blocks merge on failure.
+- [x] Direct pushes to `main` are rejected.
 - [x] The build commands in `CLAUDE.md` have been **run and verified**, and the
       pending-scaffolding caveat is removed.
 
@@ -209,6 +211,25 @@ resist making them interesting.
 - Aggregation: request rate, throttle rate, error rate, quota utilization.
 - `GET /api/v1/analytics/*` query endpoints.
 
+**Traffic insights.** Raw rates are the input, not the output. The endpoints must
+answer the questions a service owner actually asks — which is a different design
+problem from computing an average:
+
+- Which services and endpoints are throttled most?
+- What percentage of traffic is throttled, and how has it moved over time?
+- Which quotas are frequently reached, and which rules are **rarely or never
+  used**? An unused rule is either dead configuration or a limit set so high it
+  is not a limit.
+- **What happened after a rule change?** Correlating a `(ruleId, version)`
+  deployment against the throttle rate before and after is the query that makes
+  the control plane explicable — and the one that needs immutable rule versions
+  to be answerable at all.
+- Which services see the largest traffic spikes?
+
+These shape the aggregation: answering "rarely used" needs a per-rule match
+counter, and answering "after a rule change" needs deployment events joined to
+traffic windows. Both are cheap if designed in now and expensive to retrofit.
+
 **`infra/load/`** — traffic generator script producing sustained realistic load.
 
 ### Done when
@@ -217,6 +238,9 @@ resist making them interesting.
 - [ ] A rule created via the API measurably throttles live traffic end-to-end.
 - [ ] Config updates apply without dropping in-flight requests.
 - [ ] Analytics computes request/throttle/error rates from real traffic.
+- [ ] Analytics answers the traffic-insight questions above — including
+      identifying an unused rule and showing throttle rate before versus after a
+      specific rule version was deployed.
 - [ ] No simulator has any dependency on platform modules.
 
 ### Git
@@ -227,10 +251,14 @@ tag **`v0.4.0`**.
 
 ---
 
-## Phase 4 — Observability
+## Phase 4 — Observability and hardening
 
-Make the running system explainable. No new services — every existing module is
-instrumented.
+Make the running system explainable, then deliberately break it. No new services
+— every existing module is instrumented, then subjected to failure.
+
+Observability comes first for a reason: injecting a failure into a system you
+cannot observe teaches nothing. You need the trace and the dashboard to see what
+the failure actually did.
 
 ### What gets built
 
@@ -245,6 +273,31 @@ instrumented.
 - Structured JSON logging config (Logback) with trace-ID correlation.
 - Real readiness probes reflecting dependency health, not static `200`s.
 
+**`docs/failure-scenarios.md`** — the hardening catalogue. Every distributed
+-systems property the platform claims is listed with the failure that would
+disprove it, the **expected** behaviour, and the observed result.
+
+**`infra/chaos/`** — scripts that inject each scenario reproducibly. A failure
+you cannot re-run is an anecdote, not a test.
+
+The scenarios, each written as a claim to be falsified:
+
+| Injected failure | The claim under test |
+| --- | --- |
+| Kill `deployment-service` mid-deployment | Deployment resumes or fails cleanly on restart; no rule is left half-applied |
+| Deliver the same deployment event twice | `processed_events` makes the replay a no-op |
+| Deliver configuration versions **out of order** (v18 before v17) | The stale config is rejected; the newer version stays live |
+| Take Redis down | Rate limiting fails **open**, the control plane stays up |
+| Take Kafka down, then restore | Producers buffer via the outbox; consumers resume from committed offsets with no lost events |
+| Kill a consumer mid-batch | Uncommitted messages are redelivered, not dropped |
+| Sudden 10× traffic spike | Throttling holds; latency degrades gracefully rather than collapsing |
+| Postgres connection exhaustion | Timeouts fire and the circuit breaker opens instead of queueing forever |
+
+Each scenario states its **decided** behaviour beforehand — fail open or fail
+closed, retry or reject. `coding-standards.md` is explicit that an undecided
+answer is not defensible, and writing the expectation first is what turns an
+outage into a test.
+
 ### Done when
 
 - [ ] A single request is traceable from API → Kafka → Deployment → Envoy →
@@ -253,41 +306,79 @@ instrumented.
 - [ ] Logs are correlatable to traces by trace ID.
 - [ ] Readiness reports unready while a dependency is down.
 - [ ] No log line contains secrets or PII.
+- [ ] Every scenario in `failure-scenarios.md` has been **run**, and the observed
+      behaviour matches the documented expectation — or the gap is filed as a bug.
+- [ ] Out-of-order configuration delivery provably cannot apply a stale rule
+      version.
+- [ ] Redis and Kafka outages degrade the platform without taking it down.
 
 ### Git
 
 Branches `feature/phase-4-metrics`, `feature/phase-4-tracing`,
-`feature/phase-4-dashboards` → PR each → tag **`v0.5.0`**.
+`feature/phase-4-dashboards`, `feature/phase-4-hardening` → PR each →
+tag **`v0.5.0`**.
 
 ---
 
 ## Phase 5 — Production infrastructure
 
-Run it the way it would actually be run.
+Run it the way it would actually be run — orchestrated, scaled, and deployed
+without downtime.
+
+**Target is local Kubernetes.** Every orchestration concept worth learning —
+pods, deployments, ConfigMaps, Secrets, probes, HPA, service discovery, rolling
+and blue/green deploys — is learnable on kind or minikube. Running the same
+manifests against a managed cloud cluster teaches cloud-provider operations, not
+distributed systems, and costs real money and real hours to debug.
 
 ### What gets built
 
 - `Dockerfile` per service — multi-stage, non-root user, minimal base image.
 - `infra/k8s/` — deployments, services, ConfigMaps, Secrets, HPA, per service.
-- `infra/terraform/` — VPC, EKS, RDS PostgreSQL, MSK, ElastiCache, IAM roles,
-  S3, CloudWatch. Remote state backend.
-- Per-service least-privilege IAM roles (IRSA).
+- Real readiness and liveness probes wired to the health checks from Phase 4.
 - Blue/green deployment configuration.
-- `.github/workflows/deploy.yml` — image build/push and deploy pipeline.
+- `.github/workflows/deploy.yml` — image build/push pipeline.
+
+### Done when
+
+- [ ] The full platform runs on local Kubernetes.
+- [ ] Services scale horizontally under generated load via HPA.
+- [ ] A blue/green deploy completes with no dropped requests.
+- [ ] A killed pod is rescheduled without traffic loss.
+
+### Git
+
+Branches `feature/phase-5-docker`, `feature/phase-5-k8s`,
+`feature/phase-5-cicd` → PR each → tag **`v1.0.0`** (first
+production-capable release).
+
+---
+
+## Phase 5b — AWS *(deferred, optional)*
+
+**Explicitly deferred.** Taking the platform to EKS reproduces an architecture
+that already works locally; it teaches AWS operations rather than the
+distributed-systems concepts this project exists to practise. It is the largest
+time investment with the smallest conceptual return, so it waits until the
+platform is genuinely finished — and may reasonably never happen.
+
+Nothing in phases 0–6 may depend on this. When it is picked up:
+
+- `infra/terraform/` — VPC, EKS, RDS PostgreSQL, MSK, ElastiCache, IAM, S3,
+  CloudWatch, with a remote state backend.
+- Per-service least-privilege IAM roles (IRSA).
+- The same Kubernetes manifests from Phase 5, applied to a managed cluster.
 
 ### Done when
 
 - [ ] The full platform runs on EKS.
 - [ ] All infrastructure is Terraform-managed and reproducible from scratch.
-- [ ] Services scale horizontally under load via HPA.
-- [ ] A blue/green deploy completes with no dropped requests.
 - [ ] No service holds broader IAM permissions than it uses.
 
 ### Git
 
-Branches `feature/phase-5-docker`, `feature/phase-5-k8s`,
-`feature/phase-5-terraform`, `feature/phase-5-cicd` → PR each →
-tag **`v1.0.0`** (first production-capable release).
+Branches `feature/phase-5b-terraform`, `feature/phase-5b-eks` → PR each →
+tag **`v1.2.0`** (after the AI layer, since this is optional and out of line).
 
 ---
 
