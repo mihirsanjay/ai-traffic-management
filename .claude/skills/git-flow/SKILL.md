@@ -93,8 +93,8 @@ rejected. Work goes through a PR.
 
 ## Open a pull request
 
-Requires the `gh` CLI. **It is not currently installed** — if `gh --version`
-fails, say so and stop rather than improvising; installing it is a Phase 0 task.
+Requires the `gh` CLI — **installed and authenticated** (v2.97.0). If
+`gh --version` ever fails, say so and stop rather than improvising.
 
 ```bash
 gh pr create --title "feat(rule-service): add version history" --body "$(cat <<'EOF'

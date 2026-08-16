@@ -65,9 +65,9 @@ running.
 | JDK | **26.0.1** installed; build targets **21** via `<release>21</release>`. Do not install a second JDK. Pin the JDK in CI. |
 | `JAVA_HOME` | **unset** — should be set |
 | Docker | Desktop 4.76 / Engine 29.5, Compose v5.1. **Daemon must be running** before Testcontainers or `docker compose` work |
-| `gh` CLI | **2.97.0 installed** |
+| `gh` CLI | **2.97.0 installed** and authenticated |
 | `jq` | **not installed** — hooks must not depend on it |
-| `clean` fails | The repo sits in OneDrive, and the IDE Java language servers hold handles on `target/`. `mvn clean` intermittently fails with "Failed to delete ...\target". Delete the directory and re-run; it is a file lock, never a code problem. |
+| Repo location | **`C:\dev\ai-traffic-management`** — moved out of OneDrive on 2026-08-16. OneDrive sync held handles on `target/`, making `mvn clean` fail intermittently with "Failed to delete ...\target". That failure mode is now resolved; do not move the repo back under OneDrive. |
 
 ## Working agreements
 
@@ -95,6 +95,18 @@ running.
 - A `Stop` hook suggests the next git action; `/git-flow` performs it. The hook
   only ever suggests — it never commits, pushes, or tags on its own.
 - **Never run `git init`, commit, push, or tag unless asked in that turn.**
+
+## Automation
+
+- **`/context-check`** — re-reads CLAUDE.md, the roadmap, architecture, coding
+  standards, and ADRs, verifies them against the live git/build state, then
+  plans the requested feature. **Run this at the start of any session after the
+  context has been cleared, before planning new work.**
+- **`/new-service`** — scaffolds a new Maven module (child POM, parent
+  registration, package tree, optional Flyway/Kafka/Testcontainers layers).
+- **`/git-flow`** — performs git actions: branch, commit, push, PR, tag.
+- A `Stop` hook (`.claude/hooks/git-reminder.sh`) suggests the next git action.
+  It only ever suggests — it never commits, pushes, or tags on its own.
 
 ## Detailed documentation
 
