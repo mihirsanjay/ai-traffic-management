@@ -1,0 +1,45 @@
+spring:
+  application:
+    name: rule-service
+
+  datasource:
+    # Matches infra/docker-compose.yml. Throwaway loopback credentials, and
+    # deliberately committed - real secrets never live in this repository.
+    url: jdbc:postgresql://localhost:5432/rule_service
+    username: traffic
+    password: traffic
+    hikari:
+      # Every remote call needs an explicit timeout; a pool that waits forever
+      # turns a slow database into a total outage.
+      connection-timeout: 3000
+      validation-timeout: 2000
+      maximum-pool-size: 10
+
+  jpa:
+    # Flyway owns the schema. `validate` turns a drift between entity and
+    # migration into a startup failure rather than letting Hibernate silently
+    # reshape the database.
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: 8080
+  error:
+    # Error bodies come from GlobalExceptionHandler as RFC 7807 ProblemDetail;
+    # the container's default error page must never leak a stack trace.
+    include-stacktrace: never
+    include-message: never
+
+logging:
+  level:
+    root: INFO
+    com.mihir.traffic: INFO

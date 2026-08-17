@@ -90,19 +90,24 @@ The first genuinely useful service: rules can be created, versioned, and stored.
   tests for the full lifecycle; a concurrency test proving two simultaneous
   updates cannot produce duplicate version numbers.
 
-**Open decision for this phase:** pessimistic locking (`SELECT ... FOR UPDATE`)
-versus optimistic (`@Version` + conditional update with retry) for the version
-increment. Decide when writing the migration and concurrency test, and record
-the outcome as an ADR.
+**Decided:** optimistic locking (`@Version` + conditional update with bounded,
+jittered retry) for the version increment — see
+[ADR 0008](adr/0008-optimistic-locking-for-rule-versions.md). The `lock_version`
+column ships in the first migration; the retry logic and the concurrency test
+that validates the choice belong to `feature/phase-1-versioning`.
 
 ### Done when
 
 - [ ] Full rule lifecycle works via REST, with validation rejecting bad input.
+      *(Create, read, list, and soft delete are done and tested; update lands
+      with versioning below.)*
 - [ ] Updating a rule creates a new version; prior versions remain retrievable
       via the versions sub-resource, and no `UPDATE` ever overwrites a stored
       rule's values.
 - [ ] The concurrency test passes: parallel updates never duplicate a version.
-- [ ] Integration tests run against Testcontainers PostgreSQL.
+      *(Strategy decided in [ADR 0008](adr/0008-optimistic-locking-for-rule-versions.md);
+      the test that proves it belongs to `feature/phase-1-versioning`.)*
+- [x] Integration tests run against Testcontainers PostgreSQL.
 - [ ] Bucket4j throttles a test endpoint, and the limit holds across two running
       instances sharing Redis.
 

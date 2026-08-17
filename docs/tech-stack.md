@@ -14,7 +14,7 @@ organization would choose a technology** is the point, not just operating it.
 | Technology      | The problem it solves                                                     |
 | --------------- | ------------------------------------------------------------------------- |
 | **Java 21 LTS** | Primary language. Records, sealed types, pattern matching, virtual threads. |
-| **Spring Boot 3.x** | Backend framework — DI, web layer, config, actuator health/metrics.   |
+| **Spring Boot 4.x** | Backend framework — DI, web layer, config, actuator health/metrics.   |
 | **Maven**       | Multi-module build with centralized dependency and plugin management.     |
 | **REST APIs**   | The control-plane interface service owners actually call.                 |
 | **PostgreSQL**  | Durable source of truth for rules, versions, and deployment state.        |

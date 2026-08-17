@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.mihir.traffic</groupId>
+    <artifactId>ai-traffic-management</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>rule-service</artifactId>
+  <name>rule-service</name>
+  <description>
+    Rule Management Service: the control plane's front door.
+
+    Owns the lifecycle of throttling rules - creation, validation, versioning,
+    and soft deletion - with PostgreSQL as the durable source of truth.
+
+    Per ADR 0007, rules are versioned rather than mutated: a rule has stable
+    identity in `rules`, and every change appends an immutable row to
+    `rule_versions`. Deployment and rollback both need to reference a specific
+    version that cannot change underneath them.
+
+    This module deliberately has no Kafka or Redis dependency yet. Event
+    publishing arrives in Phase 2 via the transactional outbox; Redis-backed
+    Bucket4j throttling of this service's own API is the third Phase 1 branch.
+  </description>
+
+  <dependencies>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+
+    <!-- Versions come from the Spring Boot BOM in the parent. Declaring one
+         here would trip the Enforcer's dependencyConvergence rule. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-jpa</artifactId>
+    </dependency>
+    <!-- Bean Validation: coding-standards.md requires validating at the edge
+         rather than trusting a client. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+
+    <!-- Flyway owns the schema. JPA runs with ddl-auto=validate so a drift
+         between entity and migration fails at startup rather than silently
+         reshaping the database.
+
+         Spring Boot 4 moved FlywayAutoConfiguration out of
+         spring-boot-autoconfigure into its own spring-boot-flyway artifact.
+         Without it, flyway-core is on the classpath but nothing runs the
+         migrations at startup - which surfaces as Hibernate failing schema
+         validation against an empty database, not as a Flyway error. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-flyway</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-database-postgresql</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+
+    <!-- Integration tests start their own containers via Testcontainers and
+         need only the Docker daemon - never infra/docker-compose.yml, whose
+         state a test must not depend on or leave behind. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-testcontainers</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- Spring Boot 4 moved TestRestTemplate out of spring-boot-test into its
+         own artifact (org.springframework.boot.resttestclient). Preferred here
+         over RestTestClient because these tests assert on raw status codes and
+         RFC 7807 bodies, which TestRestTemplate exposes directly without
+         throwing on a 4xx. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-resttestclient</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- TestRestTemplate is built on RestTemplateBuilder, which Boot 4 keeps in
+         spring-boot-restclient. It is not pulled in transitively, and its
+         absence surfaces as a context-load failure rather than a missing
+         class at compile time. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-restclient</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Testcontainers 2.x prefixes every module artifact with
+         `testcontainers-`; the unprefixed 1.x coordinates (org.testcontainers:
+         postgresql) no longer resolve. -->
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-postgresql</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>
