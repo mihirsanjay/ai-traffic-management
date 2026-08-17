@@ -8,6 +8,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -26,6 +27,13 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 // Spring Boot 4 no longer registers a TestRestTemplate bean implicitly for a
 // RANDOM_PORT test; it has to be opted into.
 @AutoConfigureTestRestTemplate
+// Imported explicitly rather than relied on as a nested class: Spring only
+// auto-detects a nested @TestConfiguration on the test class actually being
+// run, not one inherited from an abstract base. Without this the container
+// starts but never reaches the datasource, and the application silently falls
+// back to the URL in application.yml - which passes locally whenever
+// infra/docker-compose.yml happens to be up, and fails everywhere else.
+@Import(AbstractIntegrationTest.ContainerConfiguration.class)
 public abstract class AbstractIntegrationTest {
 
   @SuppressWarnings("resource")
@@ -45,7 +53,7 @@ public abstract class AbstractIntegrationTest {
 
   /** Points the application's datasource at the container started above. */
   @TestConfiguration(proxyBeanMethods = false)
-  static class ContainerConfiguration {
+  public static class ContainerConfiguration {
 
     @Bean
     @ServiceConnection
