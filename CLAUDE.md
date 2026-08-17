@@ -11,12 +11,13 @@ distributed traffic layer (Envoy), and the resulting traffic is observed and
 analyzed. An AI agent layer is added last, on top of the working platform.
 
 **Repository:** https://github.com/mihirsanjay/ai-traffic-management
-**Status: Phase 0 in progress.** The build, quality gates, and local
-infrastructure work. Phase 1 (`rule-service/`) has not started.
+**Status: Phase 1 in progress.** Phase 0 is complete and tagged `v0.1.0` — the
+build, quality gates, and local infrastructure work. Phase 1 has started:
+`rule-service/` exists with rule CRUD; version increment and Bucket4j remain.
 
 ## Tech stack
 
-Java 21 LTS · Spring Boot 3.x · Maven (multi-module monorepo) · PostgreSQL ·
+Java 21 LTS · Spring Boot 4.x · Maven (multi-module monorepo) · PostgreSQL ·
 Redis · Kafka · Envoy · Docker · Kubernetes / AWS EKS · Terraform ·
 Micrometer / Prometheus / Grafana · OpenTelemetry · JUnit 5 · Testcontainers
 
@@ -42,16 +43,15 @@ Full service breakdown, module layout, and event contracts: @docs/architecture.m
 
 ```bash
 mvn clean verify                                 # full build, tests, quality gates
-mvn -pl common test                              # one module's tests
-mvn -pl common test -Dtest=PlatformConstantsTest # a single test class
+mvn -pl rule-service test                        # one module's tests
+mvn -pl rule-service test -Dtest=RuleServiceTest # a single test class
 mvn spotless:apply                               # auto-format
 docker compose -f infra/docker-compose.yml up -d # local Postgres, Redis, Kafka
 docker compose -f infra/docker-compose.yml down  # stop (add -v to wipe data)
 ```
 
-Commands above are verified working. Module-scoped examples use `common`
-because it is the only module so far; substitute `rule-service` once Phase 1
-creates it.
+Commands above are verified working. Integration tests need the Docker daemon
+running; unit tests do not.
 
 Local infrastructure — ports, topics, databases, troubleshooting — is
 documented in @infra/README.md. Integration tests do **not** use that stack;

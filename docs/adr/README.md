@@ -16,13 +16,11 @@ Format: `NNNN-short-title.md`, numbered sequentially.
 | [0005](0005-kafka-event-backbone.md) | Kafka as the asynchronous backbone | Accepted |
 | [0006](0006-trunk-based-development.md) | Trunk-based development | Accepted |
 | [0007](0007-immutable-rule-versioning.md) | Rules are versioned, never mutated | Accepted |
+| [0008](0008-optimistic-locking-for-rule-versions.md) | Optimistic locking for rule version increment | Accepted |
 
 ## Open decisions
 
 Recorded here until resolved, then written up as an ADR:
 
-- **Rule version concurrency control** (Phase 1) — pessimistic
-  `SELECT ... FOR UPDATE` versus optimistic `@Version` with retry. Decide while
-  writing the migration and the concurrency test.
 - **Trace backend** (Phase 4) — Jaeger or Tempo.
 - **Kafka on AWS** (Phase 5) — MSK versus self-managed on EKS.

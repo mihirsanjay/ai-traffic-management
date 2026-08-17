@@ -22,6 +22,7 @@
 
   <modules>
     <module>common</module>
+    <module>rule-service</module>
   </modules>
 
   <properties>
@@ -47,12 +48,13 @@
     <surefire.version>3.5.6</surefire.version>
     <failsafe.version>3.5.6</failsafe.version>
 
-    <!-- Coverage floor. Deliberately low while the codebase is a skeleton:
-         a high floor here either fails on an empty module or gets satisfied
-         with vacuous tests. Raise this each phase as real logic lands.
-         Per coding-standards.md, coverage is a floor that catches untested
-         files, not a target to game. -->
-    <jacoco.line.coverage>0.30</jacoco.line.coverage>
+    <!-- Coverage floor, raised in Phase 1 now that rule-service carries real
+         logic (it measures ~90% line coverage). Set below actual coverage on
+         purpose: the floor exists to catch a file that arrives with no tests
+         at all, not to be a target to game - per coding-standards.md, high
+         coverage of weak assertions proves nothing. Raise again as later
+         phases add modules. -->
+    <jacoco.line.coverage>0.75</jacoco.line.coverage>
 
     <!-- Minimum toolchain. Enforced below so an unexpected local JDK fails
          loudly at validate rather than producing subtly different bytecode. -->
@@ -69,6 +71,23 @@
         <groupId>com.mihir.traffic</groupId>
         <artifactId>common</artifactId>
         <version>${project.version}</version>
+      </dependency>
+
+      <!-- Spring Boot's BOM manages the spring-boot-testcontainers starter but
+           not the org.testcontainers artifacts themselves, so a module using a
+           container directly would have to name a version - which the
+           Enforcer's dependencyConvergence rule then rejects. Importing the
+           Testcontainers BOM keeps those versions managed in one place.
+
+           Pinned to ${testcontainers.version}, the property Spring Boot itself
+           defines, so the two stay in lockstep across a Boot upgrade rather
+           than drifting into an untested combination. -->
+      <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>testcontainers-bom</artifactId>
+        <version>${testcontainers.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
       </dependency>
     </dependencies>
   </dependencyManagement>
