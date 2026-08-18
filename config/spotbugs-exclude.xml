@@ -37,4 +37,24 @@
     <Source name="~.*[\\/]records[\\/].*"/>
   </Match>
 
+  <!--
+    EI_EXPOSE_REP2 on constructor-injected Spring collaborators.
+
+    SpotBugs sees a constructor storing a reference to a mutable object and
+    reports a leak. For a Spring bean that is the entire point: the container
+    owns these singletons and injects the same instance everywhere, so copying
+    one defensively would either break it (a ProxyManager holds a live Redis
+    connection) or silently waste it. Constructor injection over field
+    injection is what coding-standards.md requires, and this warning fires on
+    correct code following that rule.
+
+    Scoped to the classes where collaborators are injected rather than
+    disabled globally - EI_EXPOSE_REP2 still applies to ordinary classes
+    holding caller-supplied arrays or collections, where it finds real bugs.
+  -->
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+    <Class name="com.mihir.traffic.ruleservice.ratelimit.RateLimitFilter"/>
+  </Match>
+
 </FindBugsFilter>

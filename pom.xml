@@ -56,6 +56,16 @@
          phases add modules. -->
     <jacoco.line.coverage>0.75</jacoco.line.coverage>
 
+    <!-- Bucket4j is not managed by Spring Boot's BOM, so its version is pinned
+         here rather than in a child module - a version declared in a child is
+         exactly what dependencyConvergence rejects.
+
+         The `_jdk17` artifact line is deliberate: Bucket4j 8.x publishes one
+         artifact set per JDK baseline, and jdk17 is the one compiled for a
+         modern target. The jdk11 line also resolves, and would silently give
+         up the newer baseline. -->
+    <bucket4j.version>8.14.0</bucket4j.version>
+
     <!-- Minimum toolchain. Enforced below so an unexpected local JDK fails
          loudly at validate rather than producing subtly different bytecode. -->
     <min.maven.version>3.9.0</min.maven.version>
@@ -88,6 +98,36 @@
         <version>${testcontainers.version}</version>
         <type>pom</type>
         <scope>import</scope>
+      </dependency>
+
+      <!-- Bucket4j: the rate-limiting library backing the control plane's own
+           API throttling (Phase 1). Managed here so child modules declare the
+           dependency without a version.
+
+           bucket4j_jdk17-lettuce depends on lettuce-core 6.1.8, while Spring
+           Boot 4 manages 7.5.2. Two majors of the same library on one
+           classpath is precisely the latent NoSuchMethodError that
+           dependencyConvergence exists to catch, so Bucket4j's copy is
+           excluded and Boot's managed version wins. Bucket4j's Lettuce usage
+           is confined to RedisClient, StatefulRedisConnection and
+           RedisAsyncCommands, which are unchanged across that bump - a
+           compatibility smoke test pins that claim down rather than trusting
+           it. -->
+      <dependency>
+        <groupId>com.bucket4j</groupId>
+        <artifactId>bucket4j_jdk17-core</artifactId>
+        <version>${bucket4j.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.bucket4j</groupId>
+        <artifactId>bucket4j_jdk17-lettuce</artifactId>
+        <version>${bucket4j.version}</version>
+        <exclusions>
+          <exclusion>
+            <groupId>io.lettuce</groupId>
+            <artifactId>lettuce-core</artifactId>
+          </exclusion>
+        </exclusions>
       </dependency>
     </dependencies>
   </dependencyManagement>

@@ -13,7 +13,8 @@ analyzed. An AI agent layer is added last, on top of the working platform.
 **Repository:** https://github.com/mihirsanjay/ai-traffic-management
 **Status: Phase 1 in progress.** Phase 0 is complete and tagged `v0.1.0` — the
 build, quality gates, and local infrastructure work. Phase 1 has started:
-`rule-service/` exists with rule CRUD; version increment and Bucket4j remain.
+`rule-service/` has rule CRUD and Redis-backed Bucket4j rate limiting. Version
+increment is the last piece before `v0.2.0`.
 
 ## Tech stack
 
