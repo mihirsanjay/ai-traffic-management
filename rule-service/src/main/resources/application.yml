@@ -31,6 +31,28 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+  data:
+    redis:
+      # Matches infra/docker-compose.yml. Holds rate-limit counters only -
+      # reconstructible state, never a source of truth, so losing it costs one
+      # window of limits rather than data.
+      host: localhost
+      port: 6379
+
+rule-service:
+  rate-limit:
+    enabled: true
+    # Generous on purpose: this guards the control plane against a runaway
+    # client, it does not ration normal use. Counters live in Redis so the
+    # budget is shared across instances - a per-instance bucket would let N
+    # instances serve N times this number.
+    capacity: 100
+    refill-period: 1m
+    # Every remote call needs an explicit timeout. Without one a stalled Redis
+    # would hang the very API this limiter protects; when it does fire, the
+    # filter fails open and the request proceeds unthrottled.
+    redis-timeout: 1s
+
 server:
   port: 8080
   error:

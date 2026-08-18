@@ -108,13 +108,22 @@ that validates the choice belong to `feature/phase-1-versioning`.
       *(Strategy decided in [ADR 0008](adr/0008-optimistic-locking-for-rule-versions.md);
       the test that proves it belongs to `feature/phase-1-versioning`.)*
 - [x] Integration tests run against Testcontainers PostgreSQL.
-- [ ] Bucket4j throttles a test endpoint, and the limit holds across two running
+- [x] Bucket4j throttles a test endpoint, and the limit holds across two running
       instances sharing Redis.
+      *(`DistributedRateLimitIntegrationTest` spends one budget across two
+      Spring contexts on separate ports; both then refuse. The limiter fails
+      open when Redis is stopped — see the Phase 4 hardening table.)*
 
 ### Git
 
-Branches `feature/phase-1-rule-crud`, `feature/phase-1-versioning`,
-`feature/phase-1-bucket4j` → one PR each → tag **`v0.2.0`**.
+Branches `feature/phase-1-rule-crud`, `feature/phase-1-bucket4j`,
+`feature/phase-1-versioning` → one PR each → tag **`v0.2.0`**.
+
+Bucket4j landed before versioning, swapping the order originally planned here.
+The two are independent — the rate-limit filter guards the API surface and never
+touches version-increment logic — so the swap costs nothing. Versioning remains
+the last Phase 1 branch, and `v0.2.0` waits for it: ADR 0008 is not proven until
+its concurrency test exists.
 
 ---
 

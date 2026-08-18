@@ -24,9 +24,12 @@
     `rule_versions`. Deployment and rollback both need to reference a specific
     version that cannot change underneath them.
 
-    This module deliberately has no Kafka or Redis dependency yet. Event
-    publishing arrives in Phase 2 via the transactional outbox; Redis-backed
-    Bucket4j throttling of this service's own API is the third Phase 1 branch.
+    Redis-backed Bucket4j throttling guards this service's own API, with
+    counters shared across instances. Enforcement for the platform's managed
+    traffic is a separate concern that moves to Envoy in Phase 3.
+
+    This module deliberately has no Kafka dependency yet; event publishing
+    arrives in Phase 2 via the transactional outbox.
   </description>
 
   <dependencies>
@@ -81,6 +84,24 @@
       <scope>runtime</scope>
     </dependency>
 
+    <!-- Redis, and Bucket4j on top of it, back the rate-limit filter guarding
+         this service's own API. The counters must be shared: a limiter holding
+         its bucket in local memory would let N instances serve N times the
+         configured limit, which looks correct on one instance and is wrong in
+         production. Versions come from the parent. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-redis</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.bucket4j</groupId>
+      <artifactId>bucket4j_jdk17-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.bucket4j</groupId>
+      <artifactId>bucket4j_jdk17-lettuce</artifactId>
+    </dependency>
+
     <!-- Integration tests start their own containers via Testcontainers and
          need only the Docker daemon - never infra/docker-compose.yml, whose
          state a test must not depend on or leave behind. -->
@@ -120,6 +141,13 @@
     <dependency>
       <groupId>org.testcontainers</groupId>
       <artifactId>testcontainers-junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- Testcontainers publishes no Redis module, so Redis runs as a
+         GenericContainer from the core artifact. -->
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>
