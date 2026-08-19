@@ -16,13 +16,13 @@ generated.
 
 | # | Learning topic | Phase | Status |
 | --- | --- | --- | --- |
-| 1 | Core Java, Spring Boot, REST, PostgreSQL, JUnit, Testcontainers | 1 | Pending |
-| 2 | Rate limiting: token buckets, windows, burst, 429 | 1 | Pending |
+| 1 | Core Java, Spring Boot, REST, PostgreSQL, JUnit, Testcontainers | 1 | Complete |
+| 2 | Rate limiting: token buckets, windows, burst, 429 | 1 | Complete |
 | 3 | Deployment and configuration management, rollback, idempotency | 2 | Pending |
 | 4 | Event-driven architecture with Kafka | 2 | Pending |
 | 5 | Distributed data plane (Envoy), dynamic config / xDS | 3 | Pending |
 | 6 | Simulated production environment and traffic generation | 3 | Pending |
-| 7 | Redis for distributed state and caching | 1 | Pending |
+| 7 | Redis for distributed state and caching | 1 | Complete |
 | 8 | Microservices boundaries and ownership | 2 | Pending |
 | 9 | Observability: metrics, tracing, structured logging | 4 | Pending |
 | 10 | Distributed-systems hardening and failure injection | 4 | Pending |
@@ -68,7 +68,7 @@ that cannot fail proves nothing.
 
 ---
 
-## Phase 1 — Control plane core · Pending
+## Phase 1 — Control plane core · **Complete** (2026-08-19)
 
 **Concepts to practise:** REST API design and versioning · Bean Validation at
 the edge · RFC 7807 error responses · JPA and Flyway migrations · immutable
@@ -80,7 +80,77 @@ limiting with distributed Redis counters · Testcontainers integration testing.
 millisecond — how does the system avoid giving them the same version number, and
 what does the loser see?
 
-*(Summary written when the phase completes.)*
+**What it taught.**
+
+The answer to the phase's question turned out to be two answers, because the
+race has two shapes. A losing writer either fails the conditional update on
+`rules.lock_version` and surfaces `ConcurrencyFailureException`, or gets there
+first with its `INSERT` and hits the `(rule_id, version)` primary key as
+`DataIntegrityViolationException`. Both mean "someone beat you to version N",
+and `VersionConflictRetrier` has to catch both. Designing against the mechanism
+described in ADR 0008 — the `@Version` column — would have handled only half the
+collisions. The database's own constraint is the thing that actually guarantees
+correctness; the locking strategy only decides whether the loser gets a clean
+retry or an ugly 500.
+
+**A retry must live outside the transaction it retries.** Retrying inside the
+boundary re-runs work against a rolled-back state and fails identically every
+time, forever. That forced the structure: the retry loop sits outside, and each
+attempt calls back into a fresh `@Transactional` method. The related trap cost
+real time — Spring applies `@Transactional` through a proxy, so calling the
+annotated method on `this` makes the annotation *silently inert*. The version
+insert and the pointer move then commit as two independent statements, and a
+crash between them orphans the pointer. Nothing fails loudly; the code looks
+right. It was caught only by explicitly probing for an active transaction, and
+`RuleVersionAppenderIntegrationTest` now fails if the structure is undone. The
+general lesson: framework magic that works by proxy fails by silence.
+
+**A concurrency test that passes proves nothing until you prove it can fail.**
+Eight latch-released writers against one rule passed on the first run — which is
+equally consistent with a working retry and with the writers never actually
+colliding. Setting `max-attempts: 1` showed seven of the eight genuinely losing
+the race. Only then did the passing version mean something. This is the same
+lesson Phase 0 learned from `git push --dry-run`: a check that cannot fail is
+not evidence.
+
+**Test isolation failures pass locally and fail everywhere else.** Spring only
+auto-detects a nested `@TestConfiguration` on the test class being run, not one
+inherited from an abstract base. The Testcontainers Postgres started, the
+`@ServiceConnection` never reached the datasource, and the app quietly fell back
+to the URL in `application.yml` — so the suite passed whenever
+`infra/docker-compose.yml` happened to be up. The container has to be `@Import`ed
+explicitly. Its sibling cost more: `SpringApplicationBuilder.properties()` ranks
+*below* a committed `application.yml`, so the second instance in the distributed
+rate-limit test silently ignored the container's Redis port and connected to
+whatever Redis was running locally. It shared no bucket with the first instance
+— which made a genuinely broken limiter look like a passing distributed one.
+Settings that `application.yml` also defines have to be passed as command-line
+arguments via `run("--key=value")`, which outrank the file. Both bugs share a
+shape: the test appears to configure something, the configuration silently does
+not take, and the result is a green test asserting nothing. Verify by breaking
+the dependency you think you are using — stop the local container and see
+whether the test still passes.
+
+**Dependency convergence proves one version loads, not that its methods exist.**
+Bucket4j 8.14.0 declares lettuce-core 6.1.8 while Spring Boot 4 manages 7.5.2.
+Excluding Bucket4j's copy satisfies the Enforcer, but a method removed between
+majors would still surface as a `NoSuchMethodError` at runtime — the exact
+failure the rule warns about and cannot itself detect.
+`Bucket4jLettuceCompatibilityTest` exists to exercise that seam directly.
+
+**Fail-open was a decision, not a default.** The limiter guards the control
+plane's API rather than being a precondition of it, so a Redis outage costs the
+safeguard, not the service. Proving it required really stopping Redis: a mocked
+failure shows the catch block runs, while only killing the dependency shows the
+timeout actually fires and the request still completes. An unbounded wait would
+have converted a degraded cache into a total outage.
+
+Two smaller things worth keeping. Cursor pagination needs `(createdAt, ruleId)`,
+not `createdAt` alone — ordering by a non-unique key is precisely how keyset
+pagination skips and repeats rows. And a retry exhausting its budget is a `409`,
+not a masked success: the honest answer to "I could not do this" is an error,
+and `WARN` rather than `ERROR`, because a human only needs to act if it becomes
+frequent.
 
 ---
 

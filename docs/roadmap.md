@@ -126,7 +126,8 @@ Bucket4j landed before versioning, swapping the order originally planned here.
 The two are independent — the rate-limit filter guards the API surface and never
 touches version-increment logic — so the swap costs nothing. Versioning was the
 last Phase 1 branch, and ADR 0008 is now proven by a passing concurrency test
-rather than merely decided. All exit criteria are met; `v0.2.0` is ready to tag.
+rather than merely decided. All exit criteria are met and **`v0.2.0` is tagged**
+(2026-08-19).
 
 ---
 
