@@ -62,6 +62,17 @@ public class GlobalExceptionHandler {
                   "malformed-cursor",
                   "Malformed pagination cursor",
                   "The cursor is not one this service issued.");
+          // 409, never a masked success and never a 500: the update genuinely
+          // did not happen, and retrying it is a reasonable thing for the
+          // caller to do (ADR 0008).
+          case RuleError.VersionConflict e ->
+              problem(
+                  HttpStatus.CONFLICT,
+                  "version-conflict",
+                  "Concurrent rule update",
+                  "The rule was updated concurrently and the change could not be applied after "
+                      + e.attempts()
+                      + " attempt(s). Retry the request.");
         };
     return problem;
   }

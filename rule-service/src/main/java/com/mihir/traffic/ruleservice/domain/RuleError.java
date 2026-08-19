@@ -33,4 +33,17 @@ public sealed interface RuleError {
    * @param cursor the rejected cursor value
    */
   record MalformedCursor(String cursor) implements RuleError {}
+
+  /**
+   * Concurrent writers kept winning the race for the next version number until the retry budget ran
+   * out.
+   *
+   * <p>Per ADR 0008 a caller may observe optimistic-locking contention as latency while retries
+   * happen, but once the budget is exhausted the honest answer is a conflict - never a masked
+   * success, and never a 500.
+   *
+   * @param ruleId the rule whose update could not be applied
+   * @param attempts how many attempts were made before giving up
+   */
+  record VersionConflict(UUID ruleId, int attempts) implements RuleError {}
 }

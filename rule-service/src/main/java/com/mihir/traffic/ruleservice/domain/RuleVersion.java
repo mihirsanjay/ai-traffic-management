@@ -68,6 +68,28 @@ public class RuleVersion {
         new RuleVersionId(ruleId, FIRST_VERSION), limitValue, windowSpec, createdAt, createdBy);
   }
 
+  /**
+   * Creates the version that succeeds this one, carrying the supplied values.
+   *
+   * <p>This returns a new row rather than mutating the receiver, which is the whole point of ADR
+   * 0007: the version being superseded stays exactly as it was, so a deployment that references it
+   * keeps referencing the same configuration.
+   *
+   * @param limitValue requests permitted per window in the new version
+   * @param windowSpec the window the new limit applies over, e.g. {@code 1m}
+   * @param createdAt creation timestamp
+   * @param createdBy identity of the author
+   * @return the next version of this rule
+   */
+  public RuleVersion next(int limitValue, String windowSpec, Instant createdAt, String createdBy) {
+    return new RuleVersion(
+        new RuleVersionId(getRuleId(), getVersion() + 1),
+        limitValue,
+        windowSpec,
+        createdAt,
+        createdBy);
+  }
+
   public RuleVersionId getId() {
     return id;
   }

@@ -80,6 +80,29 @@ public class Rule {
     return new Rule(UUID.randomUUID(), service, endpoint, createdAt, createdBy);
   }
 
+  /**
+   * Moves the live-version pointer forward to a newly appended version.
+   *
+   * <p>The caller is responsible for having persisted the matching {@link RuleVersion} in the same
+   * transaction. Only a forward move by exactly one is accepted: anything else means the caller
+   * computed the next version from a stale read, and silently accepting it would produce exactly
+   * the lost update ADR 0008 exists to prevent.
+   *
+   * @param version the version number now live
+   * @throws IllegalArgumentException if {@code version} does not immediately succeed the current
+   *     one
+   */
+  public void applyVersion(int version) {
+    if (version != currentVersion + 1) {
+      throw new IllegalArgumentException(
+          "Version must advance by exactly one: current="
+              + currentVersion
+              + ", supplied="
+              + version);
+    }
+    this.currentVersion = version;
+  }
+
   /** Marks this rule deleted without destroying it, per ADR 0007. */
   public void softDelete(Instant deletedAt) {
     this.deletedAt = deletedAt;
