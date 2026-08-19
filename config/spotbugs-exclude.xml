@@ -54,7 +54,14 @@
   -->
   <Match>
     <Bug pattern="EI_EXPOSE_REP2"/>
-    <Class name="com.mihir.traffic.ruleservice.ratelimit.RateLimitFilter"/>
+    <Or>
+      <Class name="com.mihir.traffic.ruleservice.ratelimit.RateLimitFilter"/>
+      <!-- Holds RuleVersionAppender, whose proxied identity is load-bearing:
+           copying it defensively would strip the transactional proxy and
+           silently reintroduce the self-invocation bug that
+           RuleVersionAppenderIntegrationTest exists to prevent. -->
+      <Class name="com.mihir.traffic.ruleservice.service.RuleService"/>
+    </Or>
   </Match>
 
 </FindBugsFilter>

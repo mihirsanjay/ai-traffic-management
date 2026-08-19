@@ -10,6 +10,8 @@ import com.mihir.traffic.ruleservice.repository.RuleVersionRepository;
 import com.mihir.traffic.ruleservice.web.dto.CreateRuleRequest;
 import com.mihir.traffic.ruleservice.web.dto.RulePage;
 import com.mihir.traffic.ruleservice.web.dto.RuleResponse;
+import com.mihir.traffic.ruleservice.web.dto.RuleVersionResponse;
+import com.mihir.traffic.ruleservice.web.dto.UpdateRuleRequest;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -28,9 +30,10 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Transaction boundaries live here rather than in the controller, and no remote call is made
  * inside one.
  *
- * <p>Update and version increment are deliberately absent: they arrive with the versioning branch,
- * together with the concurrency test that proves parallel updates cannot duplicate a version
- * number.
+ * <p>Updating appends an immutable version and moves the rule's pointer (ADR 0007), guarded by
+ * optimistic locking with bounded, jittered retry (ADR 0008). The retry lives outside the
+ * transaction boundary, in {@link VersionConflictRetrier}, because a failed transaction cannot be
+ * reused.
  */
 @Service
 public class RuleService {
@@ -43,6 +46,8 @@ public class RuleService {
 
   private final RuleRepository ruleRepository;
   private final RuleVersionRepository ruleVersionRepository;
+  private final RuleVersionAppender versionAppender;
+  private final VersionConflictRetrier retrier;
   private final Clock clock;
 
   /**
@@ -50,12 +55,20 @@ public class RuleService {
    *
    * @param ruleRepository persistence for rule identities
    * @param ruleVersionRepository persistence for immutable rule versions
+   * @param versionAppender transactional append-and-move-pointer step
+   * @param retrier bounded retry for optimistic-locking conflicts
    * @param clock time source, injected so tests are not dependent on the wall clock
    */
   public RuleService(
-      RuleRepository ruleRepository, RuleVersionRepository ruleVersionRepository, Clock clock) {
+      RuleRepository ruleRepository,
+      RuleVersionRepository ruleVersionRepository,
+      RuleVersionAppender versionAppender,
+      VersionConflictRetrier retrier,
+      Clock clock) {
     this.ruleRepository = ruleRepository;
     this.ruleVersionRepository = ruleVersionRepository;
+    this.versionAppender = versionAppender;
+    this.retrier = retrier;
     this.clock = clock;
   }
 
@@ -145,6 +158,70 @@ public class RuleService {
   }
 
   /**
+   * Updates a rule by appending a new immutable version and moving its pointer.
+   *
+   * <p>No stored rule value is ever overwritten (ADR 0007). The read-compute-insert sequence is
+   * guarded by optimistic locking and retried on conflict (ADR 0008); a caller observes contention
+   * as latency, and only as an error once the retry budget is exhausted.
+   *
+   * <p>Deliberately not {@code @Transactional}. Each attempt needs its own transaction - a failed
+   * one cannot be reused - and the retry must therefore sit outside the boundary. The transactional
+   * work lives in {@link RuleVersionAppender}, a separate bean so the call actually crosses
+   * Spring's proxy; a self-invocation here would silently run without a transaction at all.
+   *
+   * @param ruleId the rule to update
+   * @param request the new values
+   * @param updatedBy identity of the author
+   * @return the rule at its new version
+   * @throws RuleOperationException carrying {@link RuleError.RuleNotFound} if absent or
+   *     soft-deleted, or {@link RuleError.VersionConflict} if the retry budget is exhausted
+   */
+  public RuleResponse update(UUID ruleId, UpdateRuleRequest request, String updatedBy) {
+    return retrier.call(
+        () -> versionAppender.append(ruleId, request, updatedBy),
+        attempts -> new RuleOperationException(new RuleError.VersionConflict(ruleId, attempts)));
+  }
+
+  /**
+   * Lists every stored version of a rule, newest first.
+   *
+   * <p>Soft-deleted rules keep their history and remain readable here: the audit trail outliving
+   * the rule is the reason deletion is a tombstone at all (ADR 0007).
+   *
+   * @param ruleId the rule whose history to read
+   * @return every version of the rule, newest first
+   * @throws RuleOperationException carrying {@link RuleError.RuleNotFound} if no such rule exists
+   */
+  @Transactional(readOnly = true)
+  public List<RuleVersionResponse> listVersions(UUID ruleId) {
+    requireRuleExists(ruleId);
+    List<RuleVersion> history = ruleVersionRepository.findHistory(ruleId);
+    List<RuleVersionResponse> responses = new ArrayList<>(history.size());
+    for (RuleVersion version : history) {
+      responses.add(RuleVersionResponse.of(version));
+    }
+    return responses;
+  }
+
+  /**
+   * Retrieves one specific version of a rule.
+   *
+   * @param ruleId the owning rule
+   * @param version the version number to read
+   * @return that version's stored values
+   * @throws RuleOperationException carrying {@link RuleError.RuleNotFound} if the rule or the
+   *     version does not exist
+   */
+  @Transactional(readOnly = true)
+  public RuleVersionResponse getVersion(UUID ruleId, int version) {
+    requireRuleExists(ruleId);
+    return ruleVersionRepository
+        .findById(new RuleVersionId(ruleId, version))
+        .map(RuleVersionResponse::of)
+        .orElseThrow(() -> new RuleOperationException(new RuleError.RuleNotFound(ruleId)));
+  }
+
+  /**
    * Soft-deletes a rule, leaving the row and its version history intact.
    *
    * <p>Per ADR 0007 deletion is a tombstone: hard deletion would destroy the history that rollback
@@ -191,6 +268,16 @@ public class RuleService {
       responses.add(RuleResponse.of(rule, version));
     }
     return responses;
+  }
+
+  /**
+   * Confirms a rule exists at all, including soft-deleted ones, so a history request for a
+   * genuinely unknown id is a 404 rather than an empty list.
+   */
+  private void requireRuleExists(UUID ruleId) {
+    if (!ruleRepository.existsById(ruleId)) {
+      throw new RuleOperationException(new RuleError.RuleNotFound(ruleId));
+    }
   }
 
   private RuleVersion requireCurrentVersion(Rule rule) {

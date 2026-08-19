@@ -11,10 +11,11 @@ distributed traffic layer (Envoy), and the resulting traffic is observed and
 analyzed. An AI agent layer is added last, on top of the working platform.
 
 **Repository:** https://github.com/mihirsanjay/ai-traffic-management
-**Status: Phase 1 in progress.** Phase 0 is complete and tagged `v0.1.0` — the
-build, quality gates, and local infrastructure work. Phase 1 has started:
-`rule-service/` has rule CRUD and Redis-backed Bucket4j rate limiting. Version
-increment is the last piece before `v0.2.0`.
+**Status: Phase 1 complete, pending tag.** Phase 0 is complete and tagged
+`v0.1.0`. Phase 1 is functionally done: `rule-service/` has rule CRUD,
+Redis-backed Bucket4j rate limiting, and immutable version increment under
+optimistic locking. Every Phase 1 exit criterion is ticked; `v0.2.0` is ready
+to tag.
 
 ## Tech stack
 

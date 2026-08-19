@@ -98,15 +98,18 @@ that validates the choice belong to `feature/phase-1-versioning`.
 
 ### Done when
 
-- [ ] Full rule lifecycle works via REST, with validation rejecting bad input.
-      *(Create, read, list, and soft delete are done and tested; update lands
-      with versioning below.)*
-- [ ] Updating a rule creates a new version; prior versions remain retrievable
+- [x] Full rule lifecycle works via REST, with validation rejecting bad input.
+- [x] Updating a rule creates a new version; prior versions remain retrievable
       via the versions sub-resource, and no `UPDATE` ever overwrites a stored
       rule's values.
-- [ ] The concurrency test passes: parallel updates never duplicate a version.
-      *(Strategy decided in [ADR 0008](adr/0008-optimistic-locking-for-rule-versions.md);
-      the test that proves it belongs to `feature/phase-1-versioning`.)*
+      *(`PUT /rules/{id}` appends a row and moves the pointer;
+      `noStoredVersionRowIsEverOverwrittenByAnUpdate` asserts against the
+      database rather than the API, so the claim is about what is stored.)*
+- [x] The concurrency test passes: parallel updates never duplicate a version.
+      *(`RuleVersionConcurrencyIntegrationTest` fires 8 latch-released writers
+      at one rule. Verified non-vacuous: with retry disabled, 7 of 8 writers
+      lose the race, so the collisions are real and the retry is what converts
+      them into successes.)*
 - [x] Integration tests run against Testcontainers PostgreSQL.
 - [x] Bucket4j throttles a test endpoint, and the limit holds across two running
       instances sharing Redis.
@@ -121,9 +124,9 @@ Branches `feature/phase-1-rule-crud`, `feature/phase-1-bucket4j`,
 
 Bucket4j landed before versioning, swapping the order originally planned here.
 The two are independent — the rate-limit filter guards the API surface and never
-touches version-increment logic — so the swap costs nothing. Versioning remains
-the last Phase 1 branch, and `v0.2.0` waits for it: ADR 0008 is not proven until
-its concurrency test exists.
+touches version-increment logic — so the swap costs nothing. Versioning was the
+last Phase 1 branch, and ADR 0008 is now proven by a passing concurrency test
+rather than merely decided. All exit criteria are met; `v0.2.0` is ready to tag.
 
 ---
 

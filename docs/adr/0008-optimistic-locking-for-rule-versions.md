@@ -75,8 +75,21 @@ whether a concurrent writer gets a clean retry or an ugly error.
   to switch that one transaction to `SELECT ... FOR UPDATE`, which this schema
   already supports without change.
 - The concurrency test proving parallel updates never duplicate a version
-  belongs to `feature/phase-1-versioning`, alongside the version-increment logic
-  it validates. **This ADR is not proven until that test exists and passes** —
-  it records a decision made against a real design, not a measured result.
+  lives in `RuleVersionConcurrencyIntegrationTest`, alongside the
+  version-increment logic it validates. **This ADR is now proven rather than
+  merely decided:** eight latch-released writers contend for one rule against a
+  real PostgreSQL, and no version number is ever duplicated. The test was
+  checked for vacuity by setting `max-attempts: 1`, under which seven of the
+  eight writers lose the race - confirming the writers genuinely collide and
+  that the bounded retry is what turns those collisions into successes.
+- **The retried step must live in a separate bean.** Spring applies
+  `@Transactional` through a proxy, so a self-invocation does not start a
+  transaction at all. Putting the append on a method of `RuleService` that
+  `update()` calls on `this` makes the annotation inert - the version insert
+  and the pointer move then commit as two independent statements, and a failure
+  between them orphans the pointer. This was written that way first and caught
+  only by probing for an active transaction; the append now lives in
+  `RuleVersionAppender` with `REQUIRES_NEW`, and
+  `RuleVersionAppenderIntegrationTest` fails if that structure is undone.
 - `@Version` makes Hibernate manage the counter, so nothing in application code
   increments `lock_version` by hand.

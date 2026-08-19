@@ -40,6 +40,20 @@ spring:
       port: 6379
 
 rule-service:
+  # Bounds on the optimistic-locking retry for rule version increment (ADR
+  # 0008). Contention on one rule is rare - a human edits a throttling rule
+  # occasionally - so this budget is sized to absorb an unlucky collision, not
+  # a sustained write storm. Both caps matter: whichever is hit first ends the
+  # retry and the caller gets a 409 rather than a masked success.
+  version-retry:
+    max-attempts: 5
+    initial-backoff: 20ms
+    max-backoff: 200ms
+    max-elapsed: 2s
+    # Randomises each backoff downward by up to this fraction, so two writers
+    # that collided do not wake together and collide again.
+    jitter-factor: 0.5
+
   rate-limit:
     enabled: true
     # Generous on purpose: this guards the control plane against a runaway
