@@ -228,16 +228,17 @@ public class RuleService {
    * and audit depend on.
    *
    * @param ruleId the rule to delete
+   * @param deletedBy identity of whoever is deleting it
    * @throws RuleOperationException carrying {@link RuleError.RuleNotFound} if absent or already
    *     deleted
    */
   @Transactional
-  public void softDelete(UUID ruleId) {
+  public void softDelete(UUID ruleId, String deletedBy) {
     Rule rule =
         ruleRepository
             .findLiveById(ruleId)
             .orElseThrow(() -> new RuleOperationException(new RuleError.RuleNotFound(ruleId)));
-    rule.softDelete(clock.instant());
+    rule.softDelete(clock.instant(), deletedBy);
     ruleRepository.save(rule);
   }
 

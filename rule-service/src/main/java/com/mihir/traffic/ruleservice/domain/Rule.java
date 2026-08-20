@@ -47,6 +47,10 @@ public class Rule {
   @Column(name = "deleted_at")
   private Instant deletedAt;
 
+  /** Who deleted the rule. Null while it is live; there is no deleter until there is a deletion. */
+  @Column(name = "deleted_by", length = 100)
+  private String deletedBy;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -103,9 +107,19 @@ public class Rule {
     this.currentVersion = version;
   }
 
-  /** Marks this rule deleted without destroying it, per ADR 0007. */
-  public void softDelete(Instant deletedAt) {
+  /**
+   * Marks this rule deleted without destroying it, per ADR 0007.
+   *
+   * <p>Records the actor as well as the instant: the {@code RULE_DELETED} event carries a {@code
+   * changedBy}, and an event that cannot say who caused it answers half the question the event
+   * stream exists to answer.
+   *
+   * @param deletedAt when the deletion happened
+   * @param deletedBy who performed it
+   */
+  public void softDelete(Instant deletedAt, String deletedBy) {
     this.deletedAt = deletedAt;
+    this.deletedBy = deletedBy;
   }
 
   public boolean isDeleted() {
@@ -134,6 +148,10 @@ public class Rule {
 
   public Instant getDeletedAt() {
     return deletedAt;
+  }
+
+  public String getDeletedBy() {
+    return deletedBy;
   }
 
   public Instant getCreatedAt() {

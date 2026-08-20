@@ -135,7 +135,7 @@ class RuleServiceTest {
     UUID missing = UUID.randomUUID();
     when(ruleRepository.findLiveById(missing)).thenReturn(Optional.empty());
 
-    assertThatThrownBy(() -> ruleService.softDelete(missing))
+    assertThatThrownBy(() -> ruleService.softDelete(missing, "bob"))
         .isInstanceOf(RuleOperationException.class)
         .extracting(e -> ((RuleOperationException) e).getError())
         .isEqualTo(new RuleError.RuleNotFound(missing));
@@ -146,10 +146,13 @@ class RuleServiceTest {
     Rule rule = Rule.create("orders", "/orders", NOW, "alice");
     when(ruleRepository.findLiveById(rule.getRuleId())).thenReturn(Optional.of(rule));
 
-    ruleService.softDelete(rule.getRuleId());
+    ruleService.softDelete(rule.getRuleId(), "bob");
 
     assertThat(rule.isDeleted()).isTrue();
     assertThat(rule.getDeletedAt()).isEqualTo(NOW);
+    // The deleter is recorded, not just the instant: RULE_DELETED carries a
+    // changedBy, and there would otherwise be nothing truthful to put in it.
+    assertThat(rule.getDeletedBy()).isEqualTo("bob");
     verify(ruleRepository).save(rule);
     verify(ruleRepository, never()).delete(any(Rule.class));
   }
