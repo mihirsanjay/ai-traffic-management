@@ -37,18 +37,22 @@ infrastructure — is itself one of the more instructive parts of the project.
 | Technology        | The problem it solves                                                  |
 | ----------------- | ---------------------------------------------------------------------- |
 | **Micrometer**    | Application metrics instrumentation, vendor-neutral.                   |
-| **Prometheus**    | Scrapes and stores those metrics.                                      |
-| **Grafana**       | Dashboards over Prometheus data.                                       |
-| **OpenTelemetry** | Distributed tracing across service and Kafka boundaries.               |
-| **Trace backend** (Jaeger or Tempo) | Stores and renders traces.                           |
+| **Prometheus** *(deferred)* | Scrapes and stores those metrics.                            |
+| **Grafana** *(deferred)* | Dashboards over Prometheus data.                                |
+| **OpenTelemetry** *(deferred)* | Distributed tracing across service and Kafka boundaries.  |
+| **Trace backend** *(deferred)* | Stores and renders traces.                                |
 | **Structured logging** | Machine-parseable logs, correlatable with traces by trace ID.     |
 | **Health checks** | Kubernetes liveness/readiness; production readiness generally.         |
-| **CloudWatch**    | AWS-native observability once running on EKS.                          |
+| **Cloud-native logging** | Provider observability once running in the cloud (Phase 6).     |
 
-Tracing was the one genuine omission in the original plan. With a request path
-that runs `API → Kafka → Deployment Service → Envoy → business service`, being
-able to follow a single request across the whole system is not optional — it is
-the difference between debugging and guessing.
+Tracing was the one genuine omission in the original plan, and the argument for
+it still holds: with a request path that runs
+`API → Kafka → Deployment Service → Envoy → business service`, following one
+request across the whole system is the difference between debugging and guessing.
+
+**It is nonetheless deferred** (2026-08-20, see [deferred.md](deferred.md)).
+Phase 4 ships a correlation ID that survives the Kafka boundary — the cheap
+version of the same property, and the seam a real tracer plugs into later.
 
 ## Infrastructure
 
@@ -56,10 +60,10 @@ the difference between debugging and guessing.
 | ---------------- | ----------------------------------------------------------------------- |
 | **Docker**       | Containerization; reproducible local environment via docker-compose.     |
 | **Kubernetes**   | Orchestration, scaling, service discovery, rolling deploys.              |
-| **AWS EKS**      | Managed Kubernetes — the production target.                             |
+| **Managed Kubernetes** | The production target (Phase 6). Provider undecided — see ADR README. |
 | **Terraform**    | Reproducible infrastructure as code.                                     |
 | **IAM**          | AWS access control, least privilege.                                     |
-| **S3**           | Supporting role only — artifacts, config snapshots, exported analytics.  |
+| **Object storage** | Supporting role only — build artifacts and config snapshots.           |
 | **GitHub Actions** | CI/CD: build, test, quality gates, image publishing.                  |
 
 ## Distributed-systems concerns
@@ -70,11 +74,11 @@ first-class requirements:
 - **Idempotency** — deployment APIs and every Kafka consumer.
 - **Retries** — exponential backoff with jitter on all remote calls.
 - **Circuit breakers** — prevent a slow dependency from consuming all threads.
-- **Caching** — Redis, for hot rule lookups on the enforcement path.
+- **Caching** — Redis, for rate-limit counters. With enforcement in Envoy there is no application read path left to cache.
 - **Service discovery** — Kubernetes-native.
 - **Horizontal scaling** — stateless services scale out; state lives in
   PostgreSQL, Redis, and Kafka.
-- **Blue/green deployment** — later phase, once EKS is running.
+- **Blue/green deployment** — deferred; see docs/deferred.md.
 
 ## Testing
 
@@ -101,4 +105,4 @@ failures become indistinguishable from the platform's.
 | Technology     | Decision              | Reasoning                                                   |
 | -------------- | --------------------- | ----------------------------------------------------------- |
 | **DynamoDB**   | Deferred              | PostgreSQL already covers persistence. Adding a second datastore without a distinct access pattern to justify it adds operational cost and no learning. Revisit only if a genuine high-throughput key-value need appears. |
-| **ECS**        | Rejected in favour of EKS | Kubernetes skills transfer more broadly; EKS is the chosen orchestration target. |
+| **ECS**        | Rejected in favour of Kubernetes | Kubernetes skills transfer across providers; a managed Kubernetes service is the orchestration target. |

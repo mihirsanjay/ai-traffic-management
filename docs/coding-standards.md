@@ -67,7 +67,10 @@ is doing at 3am from logs, metrics, and traces alone, the work is not done.
   maximum page size. An unbounded list endpoint is an outage waiting for data
   growth.
 - **Idempotency keys on mutating deployment endpoints.** Caller supplies
-  `Idempotency-Key`; the server stores the result and replays it on retry.
+  `Idempotency-Key`. Implemented as a uniqueness constraint — the same key
+  returns the existing deployment rather than creating a second one — rather than
+  by storing and replaying the response body. See
+  [ADR 0011](adr/0011-thinned-test-strategy.md).
 - **Validate at the edge** with Bean Validation; never trust a client.
 
 ## Error handling and resilience
@@ -134,9 +137,17 @@ is doing at 3am from logs, metrics, and traces alone, the work is not done.
 Required before any change merges:
 
 - Business logic branches have unit tests.
-- Every API endpoint has at least one integration test.
+- Every **capability** has at least one happy-path integration test. This was
+  "every endpoint" until 2026-08-20; see
+  [ADR 0011](adr/0011-thinned-test-strategy.md) for why it was reduced and what
+  the reduction bought.
 - Every Kafka consumer has a test proving duplicate delivery is safe.
+- No Kafka publish happens inside a database transaction, and a test proves it.
 - Every bug fix adds the test that would have caught it.
+
+The middle two are **non-negotiable** and survived the reduction deliberately:
+both guard failures that are otherwise silent. A consumer that double-processes
+and an event that is lost after commit both look exactly like success.
 
 ## Enforcement
 

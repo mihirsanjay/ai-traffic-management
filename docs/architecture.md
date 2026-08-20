@@ -25,41 +25,40 @@ Control Plane APIs
       ▼
 Rule Management
       │
+      │ PostgreSQL + outbox, one transaction
       ▼
 Kafka / Pub-Sub
       │
       ▼
 Deployment / Configuration System
       │
+      │ writes an xDS route file, atomically
       ▼
 Traffic Layer (Envoy)
       │
       ├────────► Orders Service
-      ├────────► Payments Service
-      └────────► Inventory Service
+      └────────► Payments Service
 ```
 
-## Data-plane / observability flow
+## Data-plane flow
 
 ```text
 Traffic
    │
    ▼
-Envoy
+Envoy  ──── local_ratelimit token bucket, per route
    │
-   ├── allowed
-   └── throttled
+   ├── allowed    → upstream simulator
+   └── throttled  → 429
           │
           ▼
-      Metrics/Events
-          │
-     ┌────┴─────┐
-     ▼          ▼
-Prometheus    Kafka
-     │          │
-     ▼          ▼
- Grafana     Analytics
+   Envoy admin /stats
+   (ok, rate_limited, enforced counters)
 ```
+
+Throttle telemetry comes from Envoy's own counters rather than from an event
+stream. The analytics service that would have aggregated `REQUEST_*` events is
+dropped — see [ADR 0009](adr/0009-drop-audit-and-analytics-services.md).
 
 ## Services
 
@@ -106,44 +105,21 @@ This is the service where distributed-systems concerns concentrate: a
 deployment can partially fail, be retried, be delivered twice, or need to be
 rolled back. Idempotency is a correctness requirement here, not a nicety.
 
-### 3. Analytics Service
-
-Consumes traffic and deployment events to answer "what is actually happening":
-request rate, throttle rate, error rate, latency, quota utilization, and
-historical trends.
-
-### 4. Notification / Audit Service
-
-Small at first. Its architectural purpose is to demonstrate that multiple
-consumers react independently to the same event stream:
-
-```text
-RULE_UPDATED
-     │
-     ▼
-Kafka
- ┌───┴──────────┐
- ▼              ▼
-Deployment     Audit
-Service        Service
-```
-
-Audit records answer questions like *"User X changed the Orders quota from 100
-to 500."* Notification behaviour comes later.
-
-### 5. Simulated business services
+### 3. Simulated business services
 
 **These are not part of the traffic-management platform.** They are the test
 environment — realistic traffic targets so the platform has something to manage.
 
-Three small Spring Boot applications:
+Two small Spring Boot applications:
 
 ```text
-GET /orders          GET /payments          GET /inventory/{id}
+GET /orders          GET /payments
 POST /orders         POST /payments
 ```
 
 Traffic is generated against them and the platform is observed managing it.
+Two upstreams are enough to prove per-route configuration; a third would be
+copy-paste. See [deferred.md](deferred.md).
 
 ## Target architecture
 
@@ -159,59 +135,42 @@ Traffic is generated against them and the platform is observed managing it.
                     │      Service      │
                     └─────────┬─────────┘
                               │
-                         PostgreSQL
+                    PostgreSQL + outbox
+                       (one transaction)
                               │
                               ▼
                            Kafka
-                    ┌─────────┼─────────┐
-                    │         │         │
-                    ▼         ▼         ▼
-               Deployment  Analytics   Audit
-                 Service    Service   Service
-                    │
-                    ▼
-              Configuration
-                 System
-                    │
-                    ▼
-                  Envoy
-              ┌─────┼─────┐
-              ▼     ▼     ▼
-           Orders Payments Inventory
-              │     │     │
-              └─────┼─────┘
-                    │
-                 Metrics
-                    │
-          ┌─────────┴─────────┐
-          ▼                   ▼
-     Prometheus          OpenTelemetry
-          │                   │
-          ▼                   ▼
-       Grafana          Trace Backend
+                              │
+                              ▼
+                    ┌───────────────────┐
+                    │    Deployment     │
+                    │      Service      │
+                    └─────────┬─────────┘
+                              │
+                     xDS route file
+                       (atomic move)
+                              │
+                              ▼
+                            Envoy
+                        ┌─────┴─────┐
+                        ▼           ▼
+                     Orders     Payments
 ```
+
+Kafka currently has one consumer. The fan-out capability is retained — topics,
+partitioning by rule ID, and consumer groups all still support adding a consumer
+without touching the producer, and `DEPLOYMENT_*` events are published with no
+consumer at all — but the second and third consumers are not built. See
+[ADR 0009](adr/0009-drop-audit-and-analytics-services.md).
 
 Running on:
 
 ```text
-Docker → Kubernetes → AWS EKS → Terraform-managed infrastructure
+Docker → local Kubernetes → managed Kubernetes, Terraform-managed
 ```
 
-Only after the platform works end-to-end does the AI layer go on top:
-
-```text
-                 AI Layer
-                    │
-        ┌───────────┼───────────┐
-        ▼           ▼           ▼
-    Analytics     Rule       Incident
-      Agent       Agent       Agent
-        │           │           │
-        └─────── Tools/APIs ────┘
-                    │
-                    ▼
-              Control Plane
-```
+The AI layer is benched rather than cancelled; it would go on top of a platform
+that already works, never beside one that does not.
 
 ## Repository layout
 
@@ -223,12 +182,9 @@ ai-traffic-management/
   common/                     shared event schemas, DTOs, error types
   rule-service/               Rule Management Service
   deployment-service/         Deployment Service
-  analytics-service/          Analytics Service
-  audit-service/              Notification / Audit Service
   simulators/
     orders-service/
     payments-service/
-    inventory-service/
   infra/                      docker-compose, Envoy config, Terraform, k8s
   docs/
 ```
@@ -243,20 +199,25 @@ Events are the integration surface between services, so they are treated as a
 public API: additive changes only, no field removal or type narrowing without a
 new topic version.
 
-| Event                  | Producer         | Primary consumers    |
+| Event                  | Producer         | Consumers            |
 | ---------------------- | ---------------- | -------------------- |
-| `RULE_CREATED`         | Rule Management  | Deployment, Audit    |
-| `RULE_UPDATED`         | Rule Management  | Deployment, Audit    |
-| `RULE_DELETED`         | Rule Management  | Deployment, Audit    |
-| `DEPLOYMENT_SUCCEEDED` | Deployment       | Analytics, Audit     |
-| `DEPLOYMENT_FAILED`    | Deployment       | Analytics, Audit     |
-| `REQUEST_ALLOWED`      | Data plane       | Analytics            |
-| `REQUEST_THROTTLED`    | Data plane       | Analytics            |
+| `RULE_CREATED`         | Rule Management  | Deployment           |
+| `RULE_UPDATED`         | Rule Management  | Deployment           |
+| `RULE_DELETED`         | Rule Management  | Deployment           |
+| `DEPLOYMENT_SUCCEEDED` | Deployment       | *(none yet)*         |
+| `DEPLOYMENT_FAILED`    | Deployment       | *(none yet)*         |
+
+The two deployment events are published deliberately despite having no consumer.
+They are the standing demonstration that a producer does not know or care who is
+listening — adding a consumer later requires no change to the producer. The
+former `REQUEST_ALLOWED` and `REQUEST_THROTTLED` events are removed entirely:
+they existed to feed the dropped analytics service, and Envoy has no native Kafka
+sink to produce them.
 
 Conventions:
 
 - **Topic naming** — `<domain>.<entity>.<event-type>`, e.g. `control.rule.updated`,
-  `traffic.request.throttled`.
+  `control.deployment.succeeded`.
 - **Envelope** — every event carries `eventId` (UUID), `eventType`,
   `occurredAt` (UTC instant), `traceId`, and a versioned `payload`.
 - **Idempotency** — consumers key on `eventId`. Delivery is at-least-once, so

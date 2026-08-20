@@ -4,8 +4,8 @@ PostgreSQL, Redis, and Kafka for local development. Requires Docker only —
 nothing else needs installing.
 
 This is a **development environment, not a model of production.** Production
-runs on EKS with RDS, ElastiCache, and MSK (Phase 5). Single-node, plaintext,
-and replication-factor-1 are correct here and would be wrong there.
+runs on managed Kubernetes with a managed database (Phase 6). Single-node,
+plaintext, and replication-factor-1 are correct here and would be wrong there.
 
 ## Usage
 
@@ -43,7 +43,7 @@ exits. A non-zero exit is the failure case.
 One logical database per service, created on first startup by
 `postgres/init/01-create-databases.sql`:
 
-`rule_service` · `deployment_service` · `audit_service` · `analytics_service`
+`rule_service` · `deployment_service`
 
 A single Postgres container is a local convenience; separate databases keep
 it from becoming shared-database coupling between services.
@@ -69,11 +69,12 @@ Created by `kafka/create-topics.sh`, following the
 | ----- | ---------- | --------- |
 | `control.rule.created` / `.updated` / `.deleted` | 3 | 7d |
 | `control.deployment.succeeded` / `.failed` | 3 | 7d |
-| `traffic.request.allowed` / `.throttled` | 6 | 24h |
 | `control.rule.*.dlt` (dead-letter) | 3 | 7d |
 
-Traffic topics get more partitions because they carry one event per proxied
-request; control-plane topics are low volume.
+The `traffic.request.*` topics were removed on 2026-08-20 along with the
+analytics service — see [ADR 0009](../docs/adr/0009-drop-audit-and-analytics-services.md).
+Existing local clusters still hold them; they are empty, and a `down -v` clears
+them.
 
 **Auto-creation is disabled.** Topic names are part of the event contract, so
 a typo must fail loudly rather than silently creating a topic nobody consumes.

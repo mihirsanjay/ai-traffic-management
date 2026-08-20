@@ -18,14 +18,12 @@
 
 CREATE DATABASE rule_service;
 CREATE DATABASE deployment_service;
-CREATE DATABASE audit_service;
-CREATE DATABASE analytics_service;
 
 COMMENT ON DATABASE rule_service IS
   'Rule Management Service: rules and immutable rule_versions (Phase 1), outbox (Phase 2)';
 COMMENT ON DATABASE deployment_service IS
   'Deployment Service: deployments, processed_events for idempotency (Phase 2)';
-COMMENT ON DATABASE audit_service IS
-  'Audit Service: audit_log of who changed what (Phase 2)';
-COMMENT ON DATABASE analytics_service IS
-  'Analytics Service: traffic aggregates (Phase 3)';
+
+-- The audit_service and analytics_service databases were removed on 2026-08-20
+-- when those services were dropped -- see docs/adr/0009. Existing local volumes
+-- still contain them; they are empty and harmless, and disappear on a `down -v`.

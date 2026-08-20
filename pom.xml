@@ -48,13 +48,20 @@
     <surefire.version>3.5.6</surefire.version>
     <failsafe.version>3.5.6</failsafe.version>
 
-    <!-- Coverage floor, raised in Phase 1 now that rule-service carries real
-         logic (it measures ~90% line coverage). Set below actual coverage on
-         purpose: the floor exists to catch a file that arrives with no tests
-         at all, not to be a target to game - per coding-standards.md, high
-         coverage of weak assertions proves nothing. Raise again as later
-         phases add modules. -->
-    <jacoco.line.coverage>0.75</jacoco.line.coverage>
+    <!-- Coverage floor. Set below actual coverage on purpose: the floor exists
+         to catch a file that arrives with no tests at all, not to be a target
+         to game - per coding-standards.md, high coverage of weak assertions
+         proves nothing. rule-service measures ~90% and is expected to stay
+         well above this.
+
+         Lowered from 0.75 in Phase 2 (see docs/adr/0011-thinned-test-strategy.md).
+         The rule is BUNDLE-scoped, so it applies to each module independently:
+         `common` is a module of event records whose compiler-generated accessors
+         and equals/hashCode JaCoCo still counts, and every new module must clear
+         the floor from its first commit. 0.60 is the number at which the floor
+         still catches an entirely untested file without failing a module for
+         being small and record-heavy. Reviewed at the end of Phase 4. -->
+    <jacoco.line.coverage>0.60</jacoco.line.coverage>
 
     <!-- Bucket4j is not managed by Spring Boot's BOM, so its version is pinned
          here rather than in a child module - a version declared in a child is

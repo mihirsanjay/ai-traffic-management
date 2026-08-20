@@ -17,10 +17,21 @@ Format: `NNNN-short-title.md`, numbered sequentially.
 | [0006](0006-trunk-based-development.md) | Trunk-based development | Accepted |
 | [0007](0007-immutable-rule-versioning.md) | Rules are versioned, never mutated | Accepted |
 | [0008](0008-optimistic-locking-for-rule-versions.md) | Optimistic locking for rule version increment | Accepted |
+| [0009](0009-drop-audit-and-analytics-services.md) | Drop the audit and analytics services | Accepted |
+| 0010 | Envoy `local_ratelimit` with filesystem xDS | *Pending — written in Phase 3* |
+| [0011](0011-thinned-test-strategy.md) | Thinned test strategy and a 0.60 coverage floor | Accepted |
+| 0012 | Cloud target and secrets management | *Pending — written in Phase 6* |
 
 ## Open decisions
 
 Recorded here until resolved, then written up as an ADR:
 
-- **Trace backend** (Phase 4) — Jaeger or Tempo.
-- **Kafka on AWS** (Phase 5) — MSK versus self-managed on EKS.
+- **Cloud provider** (Phase 6) — managed Kubernetes on GCP, AWS, or Azure. The
+  deciding factors are control-plane cost, which differs by roughly $70/month,
+  and which provider's IAM model is worth learning. Becomes ADR 0012.
+- **Kafka in the cloud** (Phase 6) — self-hosted in-cluster versus a managed free
+  tier. Managed Kafka is the most expensive line item by a wide margin for a
+  broker at near-zero throughput.
+
+Deferred rather than open — see [deferred.md](../deferred.md) — is the choice of
+trace backend, which is not a decision until tracing is actually being added.
