@@ -20,12 +20,44 @@
     and quietly couples services that should be independent. If something is
     used by exactly one service, it belongs in that service.
 
-    Populated in Phase 2, when event contracts are introduced.
+    Holds the event contracts as of Phase 2.
   </description>
 
   <dependencies>
-    <!-- No dependencies yet. Phase 2 adds Jackson annotations for event
-         serialization; nothing before then needs anything. -->
+    <!-- Annotations only, deliberately: NOT jackson-databind, NOT spring-kafka,
+         NOT spring-boot-starter-web.
+
+         The moment this module depends on Kafka or Spring, every consumer of an
+         event schema inherits that classpath - including the Phase 3 simulators,
+         which roadmap.md requires to have no dependency on any platform module
+         at all. Annotations keep this a pure schema definition.
+
+         Versions are managed by the Boot BOM; declaring one here is what
+         dependencyConvergence rejects. -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-annotations</artifactId>
+    </dependency>
+
+    <!-- Test scope only, and deliberately so. The event contract is a wire
+         format, so the tests must actually serialize it - asserting on record
+         equality alone would prove nothing about the JSON that crosses the
+         process boundary. Keeping these at test scope means a consuming service
+         brings its own mapper (Spring Boot's, already configured) rather than
+         inheriting one from a schema module.
+
+         spring-boot-starter-test supplies JUnit, AssertJ, and Mockito but NOT
+         jackson-databind, so both of these have to be named explicitly. -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.datatype</groupId>
+      <artifactId>jackson-datatype-jsr310</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
 </project>
