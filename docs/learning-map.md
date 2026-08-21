@@ -24,17 +24,35 @@ generated.
 | 6 | Simulated production environment and traffic generation | 3 | Pending |
 | 7 | Redis for distributed state and caching | 1 | Complete |
 | 8 | Microservices boundaries and ownership | 2 | Pending |
-| 9 | Observability: metrics, tracing, structured logging | 4 | Pending |
-| 10 | Distributed-systems hardening and failure injection | 4 | Pending |
+| 9 | Observability: metrics, structured logging, readiness | 4 | Pending, reduced |
+| 10 | Distributed-systems hardening and failure injection | — | Deferred |
 | 11 | Docker and Kubernetes | 5 | Pending |
-| 12 | CI/CD and safe deployment strategies | 0, 5 | Pending |
-| 13 | Analytics and traffic insights | 3 | Pending |
-| 14 | AI agents, tool calling, evaluation harnesses | 6 | Pending |
-| 15 | AWS: EKS, IAM, Terraform | 5b | Deferred |
+| 12 | CI/CD and safe deployment strategies | 0, 6 | Pending |
+| 13 | Analytics and traffic insights | — | Dropped |
+| 14 | AI agents, tool calling, evaluation harnesses | 7 | Benched |
+| 15 | Cloud: managed Kubernetes, IAM, Terraform, secrets | 6 | Pending |
 
-Topics 7 and 12 span phases: Redis arrives in Phase 1 for rate-limit counters
-and returns in Phase 3 for hot-path caching; CI lands in Phase 0 and deployment
-pipelines in Phase 5.
+Three rows changed status when the roadmap was condensed on 2026-08-20, and they
+are kept rather than deleted — a map of what was learned is also a record of what
+was not, and why:
+
+- **10 — hardening and failure injection.** Deferred. The eight-scenario chaos
+  catalogue was the single largest remaining item, and four of its scenarios
+  tested properties of services that no longer exist.
+- **13 — analytics and traffic insights.** Dropped. Stream aggregation is a
+  data-engineering exercise orthogonal to control-plane design, and Envoy's own
+  counters cover "is throttling working" without it.
+- **14 — AI agents.** Benched, not cancelled. It stays last for the reason it was
+  always last.
+
+**9** survives in reduced form: structured logging, five metrics, and real
+readiness probes, but no distributed tracing and no dashboards. **15** is no
+longer deferred — cloud deployment is now Phase 6 and a goal rather than an
+appendix. See [deferred.md](deferred.md) for the cost of adding any of it back.
+
+Topic 12 spans phases: CI lands in Phase 0 and deployment pipelines in Phase 6.
+Redis is now Phase 1 only — with enforcement moving into Envoy, there is no
+application read path left to cache.
 
 ---
 
@@ -158,9 +176,8 @@ frequent.
 
 **Concepts to practise:** the transactional outbox pattern · at-least-once
 delivery and why it forces idempotent consumers · event schemas as a public API
-· consumer groups, partitions, and per-entity ordering · retry with exponential
-backoff and jitter · dead-letter topics · independent consumers reacting to one
-event stream.
+· consumer groups, partitions, and per-entity ordering · claiming work rows with
+`SKIP LOCKED` · dead-letter topics · deployment status, rollback, and idempotency.
 
 **The question this phase answers:** the database commit succeeds but the Kafka
 publish fails — where did the event go, and how does the system not lie about
@@ -173,52 +190,65 @@ what happened?
 ## Phase 3 — Real data plane · Pending
 
 **Concepts to practise:** control plane versus data plane · Envoy configuration
-and dynamic config push (xDS) · moving enforcement out of the application and
-into infrastructure · realistic load generation · traffic aggregation and
-insight queries.
+and dynamic config delivery via filesystem xDS · per-route token buckets ·
+moving enforcement out of the application and into infrastructure · atomic file
+installation and why a watcher that fires on moves changes how you write files.
 
 **The question this phase answers:** how does a control plane reconfigure a
-fleet of proxies without dropping in-flight requests?
+running proxy without restarting it or dropping in-flight requests?
 
 *(Summary written when the phase completes.)*
 
 ---
 
-## Phase 4 — Observability and hardening · Pending
+## Phase 4 — Close the core · Pending
 
-**Concepts to practise:** metrics, cardinality discipline, distributed tracing
-across a queue boundary · structured logging correlated by trace ID · readiness
-that reflects real dependency health · **deliberate failure injection**:
-duplicate events, out-of-order configuration, dependency outages, mid-deployment
-kills · fail-open versus fail-closed as an explicit decision.
+**Concepts to practise:** structured logging · correlation across a queue
+boundary · metric naming and cardinality discipline · readiness that reflects
+real dependency health rather than process liveness.
 
-**The question this phase answers:** when the platform misbehaves at 3am, can
-you tell what happened from logs, metrics, and traces alone?
+**The question this phase answers:** when the platform misbehaves, can you tell
+what happened from logs and metrics alone?
+
+Reduced from the original Phase 4 — distributed tracing, dashboards, and the
+failure-injection catalogue are in [deferred.md](deferred.md).
 
 *(Summary written when the phase completes.)*
 
 ---
 
-## Phase 5 — Production infrastructure · Pending
+## Phase 5 — Containers and local Kubernetes · Pending
 
 **Concepts to practise:** container image hygiene · Kubernetes deployments,
-probes, ConfigMaps, Secrets · horizontal autoscaling under load · rolling and
-blue/green deployment.
+probes, ConfigMaps, Secrets · sidecar containers and shared volumes · why some
+workloads cannot be scaled horizontally, and saying so in the manifest.
+
+**The question this phase answers:** which parts of this system can run as more
+than one copy, and what breaks in the ones that cannot?
 
 *(Summary written when the phase completes.)*
 
 ---
 
-## Phase 6 — AI layer · Pending
+## Phase 6 — Cloud, CI/CD, and secrets · Pending
+
+**Concepts to practise:** managed Kubernetes · infrastructure as code for cloud
+resources · workload identity instead of long-lived keys · secret storage and
+rotation without a redeploy · build-and-deploy pipelines triggered by tags.
+
+**The question this phase answers:** how does code get from a git tag to a
+running cloud workload without a human copying a credential anywhere?
+
+*(Summary written when the phase completes.)*
+
+---
+
+## Phase 7 — AI layer · Benched
+
+**Benched 2026-08-20**, not cancelled. The platform is being taken to production
+first; this phase is last by design, which is exactly why it is what gets
+postponed when scope is cut.
 
 **Concepts to practise:** tool calling and MCP · agents constrained to defined
 APIs rather than direct data access · human-in-the-loop approval · evaluation
 harnesses and regression scoring for non-deterministic systems.
-
-*(Summary written when the phase completes.)*
-
----
-
-## Phase 5b — AWS · Deferred
-
-Optional, and deliberately last. See `roadmap.md`.

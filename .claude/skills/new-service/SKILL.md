@@ -1,6 +1,6 @@
 ---
 name: new-service
-description: Scaffold a new Maven module for this monorepo - child POM, parent registration, package tree, Spring Boot app class, and optional Flyway/Kafka/Testcontainers layers. Use when adding a new service or module (rule-service, deployment-service, audit-service, a simulator), or when invoked directly as /new-service.
+description: Scaffold a new Maven module for this monorepo - child POM, parent registration, package tree, Spring Boot app class, and optional Flyway/Kafka/Testcontainers layers. Use when adding a new service or module (rule-service, deployment-service, a simulator), or when invoked directly as /new-service.
 ---
 
 # New Service
@@ -89,8 +89,13 @@ a controller.
 From `docs/coding-standards.md` — these are the ones that bite:
 
 - **Constructor injection only.** No `@Autowired` fields.
-- **Checkstyle requires Javadoc on public methods**, and runs on test sources
-  too. A missing Javadoc fails the build at `validate`, before compilation.
+- **Checkstyle runs on test sources too**, and every violation fails the build at
+  `validate`, before compilation. It uses `JavadocMethod`, which validates
+  Javadoc that is present — it does **not** require Javadoc to exist. Write it on
+  public API by convention, skip it on getters and test methods.
+- **`IllegalCatch` bans catching `Throwable`, `Error`, and `RuntimeException`.**
+  A Kafka consumer error handler must use Spring's `CommonErrorHandler` rather
+  than a broad catch block.
 - **Every remote call needs an explicit timeout.** One without is a bug.
 - **`/api/v1` prefix** on REST paths; `ProblemDetail` (RFC 7807) for errors.
 - **No `Thread.sleep` in tests** — use Awaitility.

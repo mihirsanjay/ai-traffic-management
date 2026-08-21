@@ -93,13 +93,14 @@ v0.1.0   Phase 0 — foundation
 v0.2.0   Phase 1 — control plane core
 v0.3.0   Phase 2 — event backbone
 v0.4.0   Phase 3 — real data plane
-v0.5.0   Phase 4 — observability
-v1.0.0   Phase 5 — production infrastructure
-v1.1.0   Phase 6 — AI layer
+v0.5.0   Phase 4 — core complete
+v0.9.0   Phase 5 — containers and local Kubernetes
+v1.0.0   Phase 6 — cloud, CI/CD, secrets
 ```
 
-`0.x` signals pre-production. `v1.0.0` lands when the platform actually runs on
-EKS.
+`0.x` signals pre-production. `v0.9.0` means the platform is complete and
+orchestrated but not yet deployed for real; `v1.0.0` lands when it actually runs
+in a cloud. Phase 7 (AI layer) is benched and reserves no tag.
 
 ```bash
 git tag -a v0.1.0 -m "Phase 0: build, quality gates, local infrastructure"

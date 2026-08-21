@@ -20,16 +20,9 @@ KAFKA_TOPICS="/opt/kafka/bin/kafka-topics.sh"
 # than first appearing in production.
 CONTROL_PARTITIONS=3
 
-# Traffic events are the high-volume stream -- one per proxied request.
-TRAFFIC_PARTITIONS=6
-
 # 7 days for control-plane events: long enough to replay a consumer from the
 # start of a week's work.
 CONTROL_RETENTION_MS=$((7 * 24 * 60 * 60 * 1000))
-
-# 24 hours for traffic events. Local disk is finite and a load test can
-# produce a lot of these; analytics aggregates them promptly anyway.
-TRAFFIC_RETENTION_MS=$((24 * 60 * 60 * 1000))
 
 create_topic() {
   local topic="$1"
@@ -70,9 +63,9 @@ create_topic "control.rule.deleted"          "${CONTROL_PARTITIONS}" "${CONTROL_
 create_topic "control.deployment.succeeded"  "${CONTROL_PARTITIONS}" "${CONTROL_RETENTION_MS}"
 create_topic "control.deployment.failed"     "${CONTROL_PARTITIONS}" "${CONTROL_RETENTION_MS}"
 
-echo "Creating traffic topics..."
-create_topic "traffic.request.allowed"       "${TRAFFIC_PARTITIONS}" "${TRAFFIC_RETENTION_MS}"
-create_topic "traffic.request.throttled"     "${TRAFFIC_PARTITIONS}" "${TRAFFIC_RETENTION_MS}"
+# The traffic.request.* topics were removed on 2026-08-20 with the analytics
+# service -- see docs/adr/0009. Nothing produced them: Envoy has no native Kafka
+# sink, so they would have needed a log-shipping sidecar that was never built.
 
 # Dead-letter topics. A message that cannot be processed after its retries
 # are exhausted goes here rather than blocking the partition behind it or
