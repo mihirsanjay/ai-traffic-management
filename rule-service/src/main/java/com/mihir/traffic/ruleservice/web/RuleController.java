@@ -50,8 +50,9 @@ public class RuleController {
    */
   @PostMapping(BASE_PATH)
   public ResponseEntity<RuleResponse> create(@Valid @RequestBody CreateRuleRequest request) {
-    // Authenticated identity replaces this when auth arrives; recording who
-    // changed what is an ADR 0007 requirement the audit service depends on.
+    // Authenticated identity replaces this when auth arrives. Recording who
+    // changed what is an ADR 0007 requirement, and it is what the changedBy
+    // field of every rule event carries.
     RuleResponse created = ruleService.create(request, "system");
     return ResponseEntity.created(URI.create(BASE_PATH + "/" + created.id())).body(created);
   }
@@ -129,7 +130,7 @@ public class RuleController {
    */
   @DeleteMapping(BASE_PATH + "/{id}")
   public ResponseEntity<Void> delete(@PathVariable UUID id) {
-    ruleService.softDelete(id);
+    ruleService.softDelete(id, "system");
     return ResponseEntity.noContent().build();
   }
 }

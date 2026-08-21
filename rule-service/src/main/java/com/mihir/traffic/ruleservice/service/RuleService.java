@@ -1,10 +1,13 @@
 package com.mihir.traffic.ruleservice.service;
 
+import com.mihir.traffic.common.event.EventType;
 import com.mihir.traffic.ruleservice.domain.Rule;
 import com.mihir.traffic.ruleservice.domain.RuleError;
 import com.mihir.traffic.ruleservice.domain.RuleOperationException;
 import com.mihir.traffic.ruleservice.domain.RuleVersion;
 import com.mihir.traffic.ruleservice.domain.RuleVersionId;
+import com.mihir.traffic.ruleservice.observability.TraceContext;
+import com.mihir.traffic.ruleservice.outbox.OutboxWriter;
 import com.mihir.traffic.ruleservice.repository.RuleRepository;
 import com.mihir.traffic.ruleservice.repository.RuleVersionRepository;
 import com.mihir.traffic.ruleservice.web.dto.CreateRuleRequest;
@@ -48,6 +51,7 @@ public class RuleService {
   private final RuleVersionRepository ruleVersionRepository;
   private final RuleVersionAppender versionAppender;
   private final VersionConflictRetrier retrier;
+  private final OutboxWriter outboxWriter;
   private final Clock clock;
 
   /**
@@ -57,6 +61,7 @@ public class RuleService {
    * @param ruleVersionRepository persistence for immutable rule versions
    * @param versionAppender transactional append-and-move-pointer step
    * @param retrier bounded retry for optimistic-locking conflicts
+   * @param outboxWriter records rule events in the same transaction as the change
    * @param clock time source, injected so tests are not dependent on the wall clock
    */
   public RuleService(
@@ -64,11 +69,13 @@ public class RuleService {
       RuleVersionRepository ruleVersionRepository,
       RuleVersionAppender versionAppender,
       VersionConflictRetrier retrier,
+      OutboxWriter outboxWriter,
       Clock clock) {
     this.ruleRepository = ruleRepository;
     this.ruleVersionRepository = ruleVersionRepository;
     this.versionAppender = versionAppender;
     this.retrier = retrier;
+    this.outboxWriter = outboxWriter;
     this.clock = clock;
   }
 
@@ -105,6 +112,25 @@ public class RuleService {
       throw new RuleOperationException(
           new RuleError.DuplicateRule(request.service(), request.endpoint()));
     }
+
+    // Outside the try deliberately, not inside it. An outbox failure surfaces as
+    // a DataIntegrityViolationException too, and inside the block above it would
+    // be caught and reported to the caller as a 409 duplicate rule - a confident
+    // wrong answer about an entirely different table. Out here it propagates as
+    // a 500, which is the honest one. Still the same transaction, so the event
+    // and the rule remain atomic.
+    outboxWriter.writeRuleEvent(
+        EventType.RULE_CREATED,
+        OutboxWriter.payload(
+            rule.getRuleId(),
+            version.getVersion(),
+            rule.getService(),
+            rule.getEndpoint(),
+            version.getLimitValue(),
+            version.getWindowSpec(),
+            createdBy),
+        now,
+        TraceContext.currentTraceId());
 
     return RuleResponse.of(rule, version);
   }
@@ -228,17 +254,41 @@ public class RuleService {
    * and audit depend on.
    *
    * @param ruleId the rule to delete
+   * @param deletedBy identity of whoever is deleting it
    * @throws RuleOperationException carrying {@link RuleError.RuleNotFound} if absent or already
    *     deleted
    */
   @Transactional
-  public void softDelete(UUID ruleId) {
+  public void softDelete(UUID ruleId, String deletedBy) {
     Rule rule =
         ruleRepository
             .findLiveById(ruleId)
             .orElseThrow(() -> new RuleOperationException(new RuleError.RuleNotFound(ruleId)));
-    rule.softDelete(clock.instant());
+
+    // Read the current version before the tombstone goes on, so the event can
+    // report what the rule was when it died. A consumer removing the rule from
+    // the data plane needs its targeting, and after deletion there is nowhere
+    // else to get it without a second query.
+    RuleVersion current = requireCurrentVersion(rule);
+
+    Instant now = clock.instant();
+    rule.softDelete(now, deletedBy);
     ruleRepository.save(rule);
+
+    // Limit and window are null: the rule no longer has any. The identity and
+    // targeting are what a consumer needs in order to stop enforcing it.
+    outboxWriter.writeRuleEvent(
+        EventType.RULE_DELETED,
+        OutboxWriter.payload(
+            rule.getRuleId(),
+            current.getVersion(),
+            rule.getService(),
+            rule.getEndpoint(),
+            null,
+            null,
+            deletedBy),
+        now,
+        TraceContext.currentTraceId());
   }
 
   private List<RuleResponse> toResponses(List<Rule> rules) {

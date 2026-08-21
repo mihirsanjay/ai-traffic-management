@@ -61,6 +61,19 @@
            silently reintroduce the self-invocation bug that
            RuleVersionAppenderIntegrationTest exists to prevent. -->
       <Class name="com.mihir.traffic.ruleservice.service.RuleService"/>
+      <!-- Holds OutboxWriter, for the same proxy reason as above: the writer's
+           MANDATORY propagation only applies through the container's proxy. -->
+      <Class name="com.mihir.traffic.ruleservice.service.RuleVersionAppender"/>
+      <!-- Holds an ObjectMapper and a repository, both container singletons. -->
+      <Class name="com.mihir.traffic.ruleservice.outbox.OutboxWriter"/>
+      <!-- Holds a KafkaTemplate, which owns a live producer and its connection
+           pool, and OutboxBatchClaimer, whose transactional proxy is the whole
+           reason it is a separate bean. -->
+      <Class name="com.mihir.traffic.ruleservice.outbox.OutboxPublisher"/>
+      <Class name="com.mihir.traffic.ruleservice.outbox.OutboxBatchClaimer"/>
+      <!-- deployment-service equivalents: same rule, same reasoning. -->
+      <Class name="com.mihir.traffic.deploymentservice.kafka.RuleEventConsumer"/>
+      <Class name="com.mihir.traffic.deploymentservice.service.DeploymentService"/>
     </Or>
   </Match>
 

@@ -4,16 +4,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.mihir.traffic.common.event.EventType;
 import com.mihir.traffic.ruleservice.domain.Rule;
 import com.mihir.traffic.ruleservice.domain.RuleError;
 import com.mihir.traffic.ruleservice.domain.RuleOperationException;
 import com.mihir.traffic.ruleservice.domain.RuleVersion;
 import com.mihir.traffic.ruleservice.domain.RuleVersionId;
+import com.mihir.traffic.ruleservice.outbox.OutboxWriter;
 import com.mihir.traffic.ruleservice.repository.RuleRepository;
 import com.mihir.traffic.ruleservice.repository.RuleVersionRepository;
 import com.mihir.traffic.ruleservice.web.dto.CreateRuleRequest;
@@ -44,6 +47,11 @@ class RuleServiceTest {
   @Mock private RuleRepository ruleRepository;
   @Mock private RuleVersionRepository ruleVersionRepository;
 
+  // Mocked rather than real: this class tests version-increment logic, and the
+  // outbox has its own tests. What matters here is only that the write is
+  // attempted, which the verifications below assert.
+  @Mock private OutboxWriter outboxWriter;
+
   private RuleService ruleService;
 
   @BeforeEach
@@ -63,8 +71,9 @@ class RuleServiceTest {
         new RuleService(
             ruleRepository,
             ruleVersionRepository,
-            new RuleVersionAppender(ruleRepository, ruleVersionRepository, clock),
+            new RuleVersionAppender(ruleRepository, ruleVersionRepository, outboxWriter, clock),
             new VersionConflictRetrier(retryProperties),
+            outboxWriter,
             clock);
   }
 
@@ -135,7 +144,7 @@ class RuleServiceTest {
     UUID missing = UUID.randomUUID();
     when(ruleRepository.findLiveById(missing)).thenReturn(Optional.empty());
 
-    assertThatThrownBy(() -> ruleService.softDelete(missing))
+    assertThatThrownBy(() -> ruleService.softDelete(missing, "bob"))
         .isInstanceOf(RuleOperationException.class)
         .extracting(e -> ((RuleOperationException) e).getError())
         .isEqualTo(new RuleError.RuleNotFound(missing));
@@ -145,13 +154,22 @@ class RuleServiceTest {
   void softDeleteMarksTheRuleRatherThanRemovingIt() {
     Rule rule = Rule.create("orders", "/orders", NOW, "alice");
     when(ruleRepository.findLiveById(rule.getRuleId())).thenReturn(Optional.of(rule));
+    // Deletion reads the live version so the RULE_DELETED event can report what
+    // the rule was targeting when it died.
+    when(ruleVersionRepository.findById(new RuleVersionId(rule.getRuleId(), 1)))
+        .thenReturn(Optional.of(RuleVersion.first(rule.getRuleId(), 1000, "1m", NOW, "alice")));
 
-    ruleService.softDelete(rule.getRuleId());
+    ruleService.softDelete(rule.getRuleId(), "bob");
 
     assertThat(rule.isDeleted()).isTrue();
     assertThat(rule.getDeletedAt()).isEqualTo(NOW);
+    // The deleter is recorded, not just the instant: RULE_DELETED carries a
+    // changedBy, and there would otherwise be nothing truthful to put in it.
+    assertThat(rule.getDeletedBy()).isEqualTo("bob");
     verify(ruleRepository).save(rule);
     verify(ruleRepository, never()).delete(any(Rule.class));
+    // The deletion is announced in the same transaction as the tombstone.
+    verify(outboxWriter).writeRuleEvent(eq(EventType.RULE_DELETED), any(), any(), any());
   }
 
   @Test

@@ -31,6 +31,33 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+  kafka:
+    # Matches infra/docker-compose.yml's host listener. Containers on the compose
+    # network use kafka:29092 instead; a broker advertises the address clients
+    # should use after the initial metadata exchange, so the two cannot be the
+    # same value.
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # The outbox already holds a serialized envelope. Sending that string
+      # verbatim means the bytes reviewed in the outbox row are exactly the bytes
+      # on the topic, and keeps this service's package names out of a public
+      # contract - which a JsonSerializer's type headers would leak.
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # acks=all: not acknowledged until every in-sync replica has it. Anything
+      # weaker means a broker failure can lose an event the outbox has already
+      # marked published, discarding the durability the outbox exists to provide
+      # at the very last step.
+      acks: all
+      properties:
+        # Without this, an internal producer retry can write the same record
+        # twice with the same event id - a duplicate no consumer dedup key would
+        # catch, because it is genuinely the same event twice on the wire.
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+        delivery.timeout.ms: 10000
+        request.timeout.ms: 5000
+
   data:
     redis:
       # Matches infra/docker-compose.yml. Holds rate-limit counters only -
@@ -53,6 +80,18 @@ rule-service:
     # Randomises each backoff downward by up to this fraction, so two writers
     # that collided do not wake together and collide again.
     jitter-factor: 0.5
+
+  outbox:
+    # The scheduled poll. Disabled in integration tests, which call
+    # publishPending() directly so assertions cannot race a background poll.
+    enabled: true
+    poll-interval: 1s
+    initial-delay: 5s
+    batch-size: 100
+    # Every remote call needs an explicit timeout. A send future without one
+    # waits as long as the producer's delivery settings allow, and one
+    # unreachable broker would stall the whole backlog behind it.
+    send-timeout: 5s
 
   rate-limit:
     enabled: true
