@@ -48,9 +48,17 @@ public abstract class AbstractIntegrationTest {
   /** Redis's in-container port; the host port it maps to is random. */
   private static final int REDIS_PORT = 6379;
 
+  /**
+   * PostgreSQL backing the rule store.
+   *
+   * <p>The image matches {@code infra/docker-compose.yml}, as Redis's does below. Testing against a
+   * different major version than the one actually run is how a behavioural difference reaches
+   * production unnoticed — and the outbox's {@code FOR UPDATE SKIP LOCKED} and {@code JSONB} column
+   * make this suite genuinely dependent on Postgres semantics, not merely on table shape.
+   */
   @SuppressWarnings("resource")
   protected static final PostgreSQLContainer<?> POSTGRES =
-      new PostgreSQLContainer<>("postgres:16-alpine")
+      new PostgreSQLContainer<>("postgres:18.1-alpine")
           .withDatabaseName("rule_service")
           .withUsername("traffic")
           .withPassword("traffic");

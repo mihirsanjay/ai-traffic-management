@@ -46,16 +46,16 @@
          brings its own mapper (Spring Boot's, already configured) rather than
          inheriting one from a schema module.
 
-         spring-boot-starter-test supplies JUnit, AssertJ, and Mockito but NOT
-         jackson-databind, so both of these have to be named explicitly. -->
+         Note the groupId: Spring Boot 4 ships Jackson 3, which moved from
+         com.fasterxml.jackson to tools.jackson. The annotations above kept the
+         old coordinates; databind did not. Jackson 3 also handles java.time
+         natively, so no separate jsr310 module is needed.
+
+         spring-boot-starter-test supplies JUnit, AssertJ, and Mockito but not
+         databind, so it has to be named explicitly. -->
     <dependency>
-      <groupId>com.fasterxml.jackson.core</groupId>
+      <groupId>tools.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.fasterxml.jackson.datatype</groupId>
-      <artifactId>jackson-datatype-jsr310</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>

@@ -4,14 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * The event contract, expressed as executable assertions.
@@ -23,7 +22,8 @@ import org.junit.jupiter.api.Test;
  */
 class EventSerializationTest {
 
-  private final ObjectMapper mapper = JsonMapper.builder().addModule(new JavaTimeModule()).build();
+  // Jackson 3 handles java.time natively; no JavaTimeModule to register.
+  private final ObjectMapper mapper = JsonMapper.builder().build();
 
   @Test
   @DisplayName("a rule event survives a round trip through JSON unchanged")

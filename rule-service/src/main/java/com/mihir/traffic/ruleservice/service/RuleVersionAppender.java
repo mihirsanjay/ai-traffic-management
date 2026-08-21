@@ -1,10 +1,13 @@
 package com.mihir.traffic.ruleservice.service;
 
+import com.mihir.traffic.common.event.EventType;
 import com.mihir.traffic.ruleservice.domain.Rule;
 import com.mihir.traffic.ruleservice.domain.RuleError;
 import com.mihir.traffic.ruleservice.domain.RuleOperationException;
 import com.mihir.traffic.ruleservice.domain.RuleVersion;
 import com.mihir.traffic.ruleservice.domain.RuleVersionId;
+import com.mihir.traffic.ruleservice.observability.TraceContext;
+import com.mihir.traffic.ruleservice.outbox.OutboxWriter;
 import com.mihir.traffic.ruleservice.repository.RuleRepository;
 import com.mihir.traffic.ruleservice.repository.RuleVersionRepository;
 import com.mihir.traffic.ruleservice.web.dto.RuleResponse;
@@ -34,6 +37,7 @@ public class RuleVersionAppender {
 
   private final RuleRepository ruleRepository;
   private final RuleVersionRepository ruleVersionRepository;
+  private final OutboxWriter outboxWriter;
   private final Clock clock;
 
   /**
@@ -41,12 +45,17 @@ public class RuleVersionAppender {
    *
    * @param ruleRepository persistence for rule identities
    * @param ruleVersionRepository persistence for immutable rule versions
+   * @param outboxWriter records the rule event in this same transaction
    * @param clock time source, injected so tests are not dependent on the wall clock
    */
   public RuleVersionAppender(
-      RuleRepository ruleRepository, RuleVersionRepository ruleVersionRepository, Clock clock) {
+      RuleRepository ruleRepository,
+      RuleVersionRepository ruleVersionRepository,
+      OutboxWriter outboxWriter,
+      Clock clock) {
     this.ruleRepository = ruleRepository;
     this.ruleVersionRepository = ruleVersionRepository;
+    this.outboxWriter = outboxWriter;
     this.clock = clock;
   }
 
@@ -121,6 +130,28 @@ public class RuleVersionAppender {
 
     rule.applyVersion(next.getVersion());
     ruleRepository.saveAndFlush(rule);
+
+    // The outbox write belongs here rather than in RuleService.update(), and the
+    // reason is structural. update() is deliberately not transactional - the
+    // retry has to sit outside a transaction boundary - so a write there would
+    // land outside any transaction AND run once per retry attempt, emitting an
+    // event for every failed try. Here it inherits this method's REQUIRES_NEW,
+    // so a losing attempt rolls the event back along with the version row.
+    //
+    // Placed after the deliberate-failure branch above so appendThenFail keeps
+    // testing exactly what it did before.
+    outboxWriter.writeRuleEvent(
+        EventType.RULE_UPDATED,
+        OutboxWriter.payload(
+            ruleId,
+            next.getVersion(),
+            rule.getService(),
+            rule.getEndpoint(),
+            next.getLimitValue(),
+            next.getWindowSpec(),
+            updatedBy),
+        now,
+        TraceContext.currentTraceId());
 
     return RuleResponse.of(rule, next);
   }

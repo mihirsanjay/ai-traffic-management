@@ -28,11 +28,30 @@
     counters shared across instances. Enforcement for the platform's managed
     traffic is a separate concern that moves to Envoy in Phase 3.
 
-    This module deliberately has no Kafka dependency yet; event publishing
-    arrives in Phase 2 via the transactional outbox.
+    Rule changes are published as events through a transactional outbox: the
+    event row commits with the state change, and a scheduled publisher drains it
+    to Kafka afterwards, so no publish ever happens inside a database
+    transaction.
   </description>
 
   <dependencies>
+
+    <!-- Event schemas shared with every consumer. Managed in the parent's
+         dependencyManagement, so no version here. -->
+    <dependency>
+      <groupId>com.mihir.traffic</groupId>
+      <artifactId>common</artifactId>
+    </dependency>
+
+    <!-- The starter, not bare spring-kafka. spring-kafka alone puts the classes
+         on the classpath but brings no autoconfiguration, so there is no
+         KafkaTemplate bean to inject and the context fails at startup. Version
+         is managed by the Boot BOM; declaring one here is exactly what the
+         Enforcer's banDuplicatePomDependencyVersions rejects. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-kafka</artifactId>
+    </dependency>
 
     <dependency>
       <groupId>org.springframework.boot</groupId>
