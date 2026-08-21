@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.mihir.traffic</groupId>
+    <artifactId>ai-traffic-management</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>deployment-service</artifactId>
+  <name>deployment-service</name>
+  <description>
+    Turns a stored rule version into deployed configuration.
+
+    Consumes rule events from Kafka and records a deployment per event, so the
+    question "which rule version is live right now, and did applying it work"
+    has a durable answer. Kafka retention expires and Envoy keeps no history,
+    so neither can answer it; this service's own database is the record.
+
+    Delivery is at-least-once, so the consumer keys on the event id and a
+    replay is a no-op. That is a correctness requirement here, not a nicety.
+
+    Phase 3 replaces the no-op config writer with one that renders Envoy route
+    configuration and installs it.
+  </description>
+
+  <dependencies>
+
+    <!-- Event schemas shared with the producer. Managed in the parent's
+         dependencyManagement, so no version here. -->
+    <dependency>
+      <groupId>com.mihir.traffic</groupId>
+      <artifactId>common</artifactId>
+    </dependency>
+
+    <!-- The starter, not bare spring-kafka: spring-kafka alone puts the classes
+         on the classpath but brings no autoconfiguration, so no listener
+         container or KafkaTemplate bean exists and the context fails at
+         startup. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-kafka</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-jpa</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+
+    <!-- Boot 4 split Flyway's autoconfiguration into its own artifact. Omitting
+         it does not fail the build: migrations simply never run, and the first
+         symptom is Hibernate's schema validation failing against an empty
+         database. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-flyway</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-database-postgresql</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+
+    <!-- Integration tests start their own containers and need only the Docker
+         daemon - never infra/docker-compose.yml, whose state a test must not
+         depend on or leave behind. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-testcontainers</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- Boot 4 moved TestRestTemplate into its own artifact, and the builder it
+         is built on into another. Neither arrives transitively, and their
+         absence surfaces as a context-load failure rather than a compile
+         error. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-resttestclient</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-restclient</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- Testcontainers 2.x prefixes its module artifacts; the 1.x coordinates
+         (org.testcontainers:postgresql, :kafka) do not resolve. -->
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-postgresql</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-kafka</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.awaitility</groupId>
+      <artifactId>awaitility</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>
