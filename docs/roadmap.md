@@ -185,21 +185,45 @@ where the Deployment Service is built.**
 
 ### Done when
 
-- [ ] Creating, updating, and deleting a rule each write an outbox row in the
+- [x] Creating, updating, and deleting a rule each write an outbox row in the
       same transaction as the state change.
-- [ ] No Kafka publish occurs inside a database transaction, proven by a test
+      *(Create writes after its try/catch so an outbox failure is not misreported
+      as a 409; update writes inside `RuleVersionAppender`, which owns the
+      transaction, rather than in the deliberately untransacted `update()`.)*
+- [x] No Kafka publish occurs inside a database transaction, proven by a test
       that a rolled-back rule change leaves no outbox row.
-- [ ] Events reach `control.rule.*` keyed by rule ID, and rows are marked
+      *(`OutboxTransactionIntegrationTest` forces a failure after the version row
+      is written and asserts the event rolled back with it. This is the one
+      property that looks identical in review whether or not it holds.)*
+- [x] Events reach `control.rule.*` keyed by rule ID, and rows are marked
       published.
-- [ ] `deployment-service` consumes all three topics and records a deployment.
-- [ ] Delivering the same event twice produces exactly one deployment row.
-- [ ] A deployment can be rolled back to a prior rule version.
-- [ ] `mvn clean verify` is green with the coverage floor at 0.60.
+      *(`OutboxSkipLockedIntegrationTest` additionally proves two concurrent
+      pollers claim disjoint batches, which is what keeps `rule-service`
+      scalable beyond one replica.)*
+- [x] `deployment-service` consumes all three topics and records a deployment.
+- [x] Delivering the same event twice produces exactly one deployment row.
+      *(`RuleEventConsumerIntegrationTest` asserts row identity and timestamps,
+      not just the count - an upserting consumer would hold the count at one
+      while rewriting the row. This test found three real bugs: idempotency that
+      silently did not work, a dead-letter topic naming mismatch that would have
+      failed against real infrastructure, and a redelivery loop caused by
+      catching a constraint violation inside a transaction Postgres had already
+      marked rollback-only.)*
+- [x] A deployment can be rolled back to a prior rule version.
+      *(Rollback appends a new deployment rather than rewriting history, so the
+      record reads as what actually happened.)*
+- [x] `mvn clean verify` is green with the coverage floor at 0.60.
+      *(Coverage: `common` 90%, `rule-service` 91.9%, `deployment-service`
+      84.8%.)*
 
 ### Git
 
 Branches `feature/phase-2-outbox`, `feature/phase-2-deployment-service` → one PR
 each → tag **`v0.3.0`**.
+
+The roadmap restructure landed first as its own PR, so the code was built against
+documentation that matched it. All exit criteria are met and **`v0.3.0` is
+tagged** (2026-08-21).
 
 ---
 

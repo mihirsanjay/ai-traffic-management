@@ -11,11 +11,17 @@ distributed traffic layer (Envoy), and the resulting traffic is observed and
 analyzed. An AI agent layer is added last, on top of the working platform.
 
 **Repository:** https://github.com/mihirsanjay/ai-traffic-management
-**Status: Phase 1 complete and tagged `v0.2.0`.** Phase 0 is complete and tagged
-`v0.1.0`. `rule-service/` has rule CRUD, Redis-backed Bucket4j rate limiting,
-and immutable version increment under optimistic locking. Every Phase 1 exit
-criterion is ticked. **Phase 2 (event backbone) is in progress** — `common/` is
-still an empty skeleton, and no service consumes events yet.
+**Status: Phase 2 complete and tagged `v0.3.0`.** Phases 0 and 1 are complete and
+tagged `v0.1.0` and `v0.2.0`. `rule-service/` has rule CRUD, Redis-backed
+Bucket4j rate limiting, immutable version increment under optimistic locking, and
+a transactional outbox publishing rule events to Kafka. `common/` holds the event
+contracts. `deployment-service/` consumes those events into durable, idempotent
+deployment records with status, history, and rollback. Every Phase 2 exit
+criterion is ticked.
+
+**Phase 3 (real data plane) is next and has not started** — there is no Envoy
+configuration and no simulator yet, and `deployment-service`'s `ConfigWriter` is
+still the logging no-op that Phase 3 replaces.
 
 **The roadmap was condensed on 2026-08-20** in favour of breadth: finish the core
 platform in three sessions, then deploy to a real cloud with CI/CD and secrets

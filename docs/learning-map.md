@@ -18,12 +18,12 @@ generated.
 | --- | --- | --- | --- |
 | 1 | Core Java, Spring Boot, REST, PostgreSQL, JUnit, Testcontainers | 1 | Complete |
 | 2 | Rate limiting: token buckets, windows, burst, 429 | 1 | Complete |
-| 3 | Deployment and configuration management, rollback, idempotency | 2 | Pending |
-| 4 | Event-driven architecture with Kafka | 2 | Pending |
+| 3 | Deployment and configuration management, rollback, idempotency | 2 | Complete |
+| 4 | Event-driven architecture with Kafka | 2 | Complete |
 | 5 | Distributed data plane (Envoy), dynamic config / xDS | 3 | Pending |
 | 6 | Simulated production environment and traffic generation | 3 | Pending |
 | 7 | Redis for distributed state and caching | 1 | Complete |
-| 8 | Microservices boundaries and ownership | 2 | Pending |
+| 8 | Microservices boundaries and ownership | 2 | Complete |
 | 9 | Observability: metrics, structured logging, readiness | 4 | Pending, reduced |
 | 10 | Distributed-systems hardening and failure injection | — | Deferred |
 | 11 | Docker and Kubernetes | 5 | Pending |
@@ -172,18 +172,88 @@ frequent.
 
 ---
 
-## Phase 2 — Event backbone · Pending
+## Phase 2 — Event backbone · **Complete** (2026-08-21)
 
-**Concepts to practise:** the transactional outbox pattern · at-least-once
-delivery and why it forces idempotent consumers · event schemas as a public API
-· consumer groups, partitions, and per-entity ordering · claiming work rows with
+**Concepts practised:** the transactional outbox pattern · at-least-once delivery
+and why it forces idempotent consumers · event schemas as a public API · consumer
+groups, partitions, and per-entity ordering · claiming work rows with
 `SKIP LOCKED` · dead-letter topics · deployment status, rollback, and idempotency.
 
 **The question this phase answers:** the database commit succeeds but the Kafka
 publish fails — where did the event go, and how does the system not lie about
 what happened?
 
-*(Summary written when the phase completes.)*
+**What it taught.**
+
+The answer is that the publish must not be a separate act of faith. The event row
+commits inside the same transaction as the change it describes, so the two are
+durable together or not at all, and a poller moves rows to Kafka afterwards. What
+makes this more than bookkeeping is that the *ordering of the remaining steps* is
+forced rather than chosen. Claim, mark published, then send is at-most-once: a
+crash in the middle loses the event. Claim, send, then mark is at-least-once: a
+crash republishes. Only one of those failures is recoverable downstream, so the
+choice makes itself — and it is the same shape as Phase 1's lesson that the
+database's own constraint, not the application's cleverness, is what guarantees
+correctness.
+
+**A test that is mandatory is mandatory for a reason.** `CLAUDE.md` requires a
+duplicate-delivery test for every Kafka consumer. It was written expecting to
+confirm something already true, and it found three distinct bugs stacked behind
+one another, each hidden by the last:
+
+1. **Idempotency silently did not exist.** `ProcessedEvent` has an assigned
+   `@Id`, and Spring Data decides insert-versus-update by asking whether the id
+   is null. Non-null means "existing", so `save` called `merge` — a `SELECT`
+   followed by an `UPDATE`. The replay *found* the ledger row and quietly
+   rewrote it instead of violating its primary key. The same event deployed
+   twice and nothing failed. `Persistable` with `isNew()` returning true is what
+   forces a real `INSERT`.
+2. **Every dead-letter publish would have failed.** Spring Kafka's default
+   suffix is `<topic>-dlt`; this project provisions `<topic>.dlt`. Against a
+   broker with auto-creation disabled, every dead-letter publish fails — and
+   because the recoverer's own failure is a listener failure, the record
+   redelivers forever. This was only visible because the test broker was
+   configured to match the real one; with the container's default of
+   auto-creation on, the tests would have created their own topics, passed, and
+   failed in production.
+3. **Catching a constraint violation does not rescue the transaction.** Once
+   Postgres raises `23505` the transaction is already marked rollback-only, so
+   catching `DataIntegrityViolationException` does not save the commit. The
+   commit fails anyway, the listener errors, and the record redelivers
+   identically — twenty times in one run. The consumer now checks its ledger
+   before inserting and keeps the constraint as the backstop for the race a
+   check cannot win. **Both halves are needed**, which contradicted what ADR
+   0013 and the migration comment had confidently asserted; both are corrected.
+
+The general lesson from all three: **a failure that presents as a loop points
+nowhere near its cause.** A duplicate would have been obvious; an infinite
+redelivery looked like a broker problem, then a topic problem, then a
+configuration problem, and was none of them.
+
+**Framework magic keeps failing by silence, in new places.** Phase 1 learned that
+`@Transactional` applied through a proxy goes inert on self-invocation. The same
+shape recurred three times here. `OutboxBatchClaimer` must be a separate bean or
+`SKIP LOCKED` runs with no transaction and releases its locks immediately — it
+would appear to work while protecting nothing. `spring-kafka` on the classpath
+brings no autoconfiguration, so without the starter there is no `KafkaTemplate`
+bean and *every* context fails, including tests unrelated to Kafka. And
+`KafkaAdmin` discovers individual `NewTopic` beans but ignores a `NewTopic[]`
+entirely, with no wiring error — just a producer timing out sixty seconds later
+complaining about broker metadata.
+
+**Test isolation is not the same as clearing tables.** Truncating between tests
+while the Kafka topics still hold earlier tests' records made things actively
+worse: the consumer kept delivering those records into a now-empty table, so a
+global row count measured other tests' traffic. Scoping every assertion to a
+freshly generated rule id is isolation that does not depend on the broker being
+quiet — which is the only kind available when the shared state is a log rather
+than a table.
+
+One smaller thing worth keeping: asserting an *absence* needs a different shape
+from asserting a presence. "Still exactly one deployment" is already true the
+instant a replay is published, so polling for it passes before the duplicate
+could possibly have arrived. Holding the condition for a few seconds is what
+gives the bug time to appear.
 
 ---
 
