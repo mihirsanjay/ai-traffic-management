@@ -23,6 +23,7 @@
   <modules>
     <module>common</module>
     <module>rule-service</module>
+    <module>deployment-service</module>
   </modules>
 
   <properties>

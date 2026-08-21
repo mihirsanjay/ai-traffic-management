@@ -1,0 +1,71 @@
+spring:
+  application:
+    name: deployment-service
+
+  datasource:
+    # Matches infra/docker-compose.yml. Throwaway loopback credentials, and
+    # deliberately committed - real secrets never live in this repository.
+    url: jdbc:postgresql://localhost:5432/deployment_service
+    username: traffic
+    password: traffic
+    hikari:
+      # Every remote call needs an explicit timeout; a pool that waits forever
+      # turns a slow database into a total outage.
+      connection-timeout: 3000
+      validation-timeout: 2000
+      maximum-pool-size: 10
+
+  jpa:
+    # Flyway owns the schema. `validate` turns a drift between entity and
+    # migration into a startup failure rather than letting Hibernate silently
+    # reshape the database.
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  kafka:
+    # Matches infra/docker-compose.yml's host listener. Containers on the compose
+    # network use kafka:29092 instead - a broker advertises the address clients
+    # should use after the initial metadata exchange, so the two differ.
+    bootstrap-servers: localhost:9092
+    consumer:
+      # The group is what makes this service an independent reader. Another
+      # consumer added later uses its own group and its own offsets, and the
+      # producer never learns it exists.
+      group-id: deployment-service
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # Offsets are committed by the listener after the work commits, never on a
+      # timer. Auto-commit acknowledges whether or not processing succeeded,
+      # which drops events when a consumer dies mid-batch.
+      enable-auto-commit: false
+      # A new consumer group reads the topic from the beginning rather than
+      # skipping whatever happened before it started.
+      auto-offset-reset: earliest
+    listener:
+      ack-mode: manual_immediate
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+
+server:
+  port: 8081
+  error:
+    # Error bodies come from GlobalExceptionHandler as RFC 7807 ProblemDetail;
+    # the container's default error page must never leak a stack trace.
+    include-stacktrace: never
+    include-message: never
+
+logging:
+  level:
+    root: INFO
+    com.mihir.traffic: INFO
