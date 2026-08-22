@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: orders-service
+
+  threads:
+    # Virtual threads: the simulated latency below parks a request rather than
+    # occupying a platform thread, so a slow upstream can still absorb the
+    # concurrency a throttling test throws at it.
+    virtual:
+      enabled: true
+
+server:
+  # 8080 and 8081 belong to rule-service and deployment-service; Envoy takes
+  # 10000. Simulators sit above those so the whole platform can run at once on
+  # one machine without a port collision.
+  port: 9001
+  error:
+    include-stacktrace: never
+    include-message: never
+
+simulator:
+  # Both default to "perfectly behaved". A simulator that is slow or flaky by
+  # default makes every throttling assertion intermittently red, and the
+  # flakiness gets blamed on the platform rather than on this file.
+  latency: 0ms
+  error-rate: 0.0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Envoy's cluster health checks need somewhere to point, and a
+        # container orchestrator will want the same endpoint in Phase 5.
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.mihir.traffic: INFO
