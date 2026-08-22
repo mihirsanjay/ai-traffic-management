@@ -24,6 +24,8 @@
     <module>common</module>
     <module>rule-service</module>
     <module>deployment-service</module>
+    <!-- The test environment, not the platform. See simulators/pom.xml. -->
+    <module>simulators</module>
   </modules>
 
   <properties>
