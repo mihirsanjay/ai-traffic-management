@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.mihir.traffic</groupId>
+    <artifactId>simulators</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>orders-service</artifactId>
+  <name>orders-service</name>
+  <description>
+    A simulated business service, and deliberately not part of the platform.
+
+    An order-taking API: GET /api/v1/orders lists them, POST /api/v1/orders places one.
+    In-memory state only, with optional artificial latency and an error rate that
+    defaults to zero so tests stay deterministic.
+
+    It knows nothing about rules, throttling, or Envoy. Traffic reaches it
+    through the proxy, and it cannot tell the difference between a request that
+    was throttled and one that was never sent - which is exactly what makes it a
+    realistic test environment rather than a component of the system under test.
+  </description>
+
+  <dependencies>
+    <!-- web only. No common, no Kafka, no database, no Redis.
+
+         The absence of a dependency on com.mihir.traffic:common is the point,
+         not an oversight: per ADR 0003 and docs/roadmap.md, a simulator that
+         imports a platform module stops being an independent upstream. If this
+         block ever grows a platform dependency, that is the design error the
+         roadmap warns about. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+
+    <!-- Binds and validates the artificial-latency and error-rate knobs. Bean
+         Validation on @ConfigurationProperties turns a nonsensical value - a
+         negative delay, an error rate above 1 - into a startup failure rather
+         than surprising behaviour at request time. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+
+    <!-- TestRestTemplate. Boot 4 splits it into its own artifact, and unlike
+         the platform modules this one has no spring-boot-restclient on the
+         compile classpath to pull it in transitively - a simulator makes no
+         outbound calls. Declared explicitly rather than adding a production
+         dependency the service does not need. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-resttestclient</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- TestRestTemplate is built on RestTemplate, so its auto-configuration
+         fails to introspect without this on the classpath. The platform modules
+         get it transitively because they make outbound HTTP calls; a simulator
+         only receives them, so it needs the client at test scope only. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-restclient</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>

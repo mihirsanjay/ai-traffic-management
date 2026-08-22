@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.mihir.traffic</groupId>
+    <artifactId>ai-traffic-management</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>simulators</artifactId>
+  <packaging>pom</packaging>
+  <name>simulators</name>
+  <description>
+    Aggregator for the simulated business services.
+
+    These are NOT part of the traffic-management platform. They are the test
+    environment: realistic upstreams so the platform has traffic to manage.
+    Grouping them under one aggregator keeps that distinction visible in the
+    module list itself - `common`, `rule-service`, and `deployment-service` are
+    the platform; everything under `simulators/` is the thing being managed.
+
+    Per docs/roadmap.md, a simulator that imports a platform module is a design
+    error, not a shortcut. They must remain able to run with this repository's
+    other modules deleted.
+  </description>
+
+  <modules>
+    <module>orders-service</module>
+    <module>payments-service</module>
+  </modules>
+
+</project>
