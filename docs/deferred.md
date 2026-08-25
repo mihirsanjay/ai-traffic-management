@@ -19,6 +19,13 @@ with known cost rather than an archaeology exercise.
 | **Redis caching on the enforcement read path** | Cache invalidation against a versioned source of truth | **Low** | Only if a read path becomes hot. With enforcement in Envoy there is currently no application read path at all |
 | **HPA, blue/green, rolling deploys** | Horizontal scaling and zero-downtime rollout | **Medium** | Phase 5, if local Kubernetes goes faster than budgeted |
 | **Third simulator** (`inventory-service`) | Nothing new — it is a copy of the other two | **Trivial** | If a demo needs a third upstream |
+| **Direct-to-simulator rate limiting** (bypass Envoy: `deployment-service` pushes limits straight into `orders-service`/`payments-service` over HTTP, enforced with a local in-memory Bucket4j bucket per simulator) | End-to-end enforcement without the data-plane-proxy complexity — useful as a stepping stone or a permanent simplification if Envoy is never built | **Low–Medium.** New `simulators/simulator-common` module (`RateLimitHolder`, `RateLimitGate` interceptor, admin controller `PUT`/`DELETE /internal/rate-limits`), a `SimulatorConfigWriter` replacing `NoOpConfigWriter` behind a `deployment-service.config-writer=simulator\|noop` property, one `RestClient` bean with explicit timeouts. Full design already drafted in a planning session. | If live enforcement is wanted before Envoy work starts, or as a permanent alternative to Envoy if the proxy-based data plane is dropped entirely |
+
+The rate-limiting row above was scoped down to individual classes and config shapes in a planning
+session on 2026-08-23, then deliberately not built — the session prioritized Dockerizing and
+running the platform end-to-end in containers instead. `NoOpConfigWriter` already logs what it
+would apply on every deployment, which was judged enough to demonstrate the full control-plane
+loop without live enforcement.
 
 ## Dropped, not deferred
 
