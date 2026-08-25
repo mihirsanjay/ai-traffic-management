@@ -76,6 +76,14 @@
          up the newer baseline. -->
     <bucket4j.version>8.14.0</bucket4j.version>
 
+    <!-- Overrides Spring Boot's managed 42.7.11, which carries CVE-2026-54291
+         (HIGH): a SCRAM authentication flaw in the bundled scram-client. Found
+         by the Trivy dependency scan in security.yml on its first run.
+
+         Remove this override once Boot's BOM manages 42.7.12 or later, at
+         which point it is dead weight that pins the driver behind Boot. -->
+    <postgresql.version>42.7.12</postgresql.version>
+
     <!-- Minimum toolchain. Enforced below so an unexpected local JDK fails
          loudly at validate rather than producing subtly different bytecode. -->
     <min.maven.version>3.9.0</min.maven.version>
