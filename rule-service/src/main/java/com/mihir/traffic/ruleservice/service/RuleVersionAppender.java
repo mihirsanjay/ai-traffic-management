@@ -116,10 +116,24 @@ public class RuleVersionAppender {
     Instant now = clock.instant();
     RuleVersion next = current.next(request.limit(), request.window(), now, updatedBy);
 
-    // Order matters: the version row goes in first, so the pointer is never
-    // moved to a version that does not exist. The flush forces both the
-    // primary-key check and the @Version check to happen here, where the
-    // retrier can see them, rather than at commit time where it could not.
+    persistVersionAndPointer(rule, next, failAfterVersionWrite);
+    recordEvent(ruleId, rule, next, updatedBy, now);
+
+    return RuleResponse.of(rule, next);
+  }
+
+  /**
+   * Writes the new version row and moves the rule's pointer to it.
+   *
+   * <p>The flush forces both the primary-key check and the {@code @Version} check to happen here,
+   * where the retrier can see them, rather than at commit time where it could not.
+   *
+   * @param rule the rule whose pointer moves
+   * @param next the version being appended
+   * @param failAfterVersionWrite test-only switch; see {@link #appendThenFail}
+   */
+  private void persistVersionAndPointer(
+      Rule rule, RuleVersion next, boolean failAfterVersionWrite) {
     ruleVersionRepository.saveAndFlush(next);
 
     if (failAfterVersionWrite) {
@@ -130,16 +144,25 @@ public class RuleVersionAppender {
 
     rule.applyVersion(next.getVersion());
     ruleRepository.saveAndFlush(rule);
+  }
 
-    // The outbox write belongs here rather than in RuleService.update(), and the
-    // reason is structural. update() is deliberately not transactional - the
-    // retry has to sit outside a transaction boundary - so a write there would
-    // land outside any transaction AND run once per retry attempt, emitting an
-    // event for every failed try. Here it inherits this method's REQUIRES_NEW,
-    // so a losing attempt rolls the event back along with the version row.
-    //
-    // Placed after the deliberate-failure branch above so appendThenFail keeps
-    // testing exactly what it did before.
+  /**
+   * Records the rule-changed event for publication.
+   *
+   * <p>This belongs on the appender rather than in {@code RuleService.update()}, and the reason is
+   * structural. {@code update()} is deliberately not transactional - the retry has to sit outside a
+   * transaction boundary - so a write there would land outside any transaction AND run once per
+   * retry attempt, emitting an event for every failed try. Here it inherits the caller's {@code
+   * REQUIRES_NEW}, so a losing attempt rolls the event back along with the version row.
+   *
+   * @param ruleId the rule the event concerns
+   * @param rule the rule, for its targeting
+   * @param next the version the event describes
+   * @param updatedBy identity of the author
+   * @param now the instant the change happened
+   */
+  private void recordEvent(
+      UUID ruleId, Rule rule, RuleVersion next, String updatedBy, Instant now) {
     outboxWriter.writeRuleEvent(
         EventType.RULE_UPDATED,
         OutboxWriter.payload(
@@ -152,7 +175,5 @@ public class RuleVersionAppender {
             updatedBy),
         now,
         TraceContext.currentTraceId());
-
-    return RuleResponse.of(rule, next);
   }
 }
