@@ -1,0 +1,83 @@
+# The four application services, containerized, on top of the infra from
+# docker-compose.yml (Postgres, Redis, Kafka).
+#
+# Kept as a SEPARATE file rather than merged into docker-compose.yml: that
+# file's stated purpose is local infra only, and the project's integration
+# tests deliberately use Testcontainers instead of depending on it. Mixing in
+# application containers would change that file's contract.
+#
+# Build context for every service is the repo root (one directory up from
+# this file), because this is a multi-module Maven reactor (ADR 0003) -- each
+# Dockerfile needs the whole repo's poms and common/'s sources.
+#
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml up -d --build
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml down
+#
+# Container-to-container networking uses compose service names as hostnames
+# (postgres, kafka, redis) rather than localhost -- the existing
+# application.yml files are untouched; Spring Boot's relaxed env-var binding
+# (SPRING_DATASOURCE_URL, etc.) overrides them at the container boundary.
+
+name: ai-traffic-management
+
+services:
+  rule-service:
+    build:
+      context: ..
+      dockerfile: rule-service/Dockerfile
+    container_name: atm-rule-service
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka-topics:
+        condition: service_completed_successfully
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/rule_service
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  deployment-service:
+    build:
+      context: ..
+      dockerfile: deployment-service/Dockerfile
+    container_name: atm-deployment-service
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-topics:
+        condition: service_completed_successfully
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/deployment_service
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    ports:
+      - "127.0.0.1:8081:8081"
+
+  orders-service:
+    build:
+      context: ..
+      dockerfile: simulators/Dockerfile
+      args:
+        MODULE: orders-service
+        PORT: 9001
+    container_name: atm-orders-service
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9001:9001"
+
+  payments-service:
+    build:
+      context: ..
+      dockerfile: simulators/Dockerfile
+      args:
+        MODULE: payments-service
+        PORT: 9002
+    container_name: atm-payments-service
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9002:9002"
