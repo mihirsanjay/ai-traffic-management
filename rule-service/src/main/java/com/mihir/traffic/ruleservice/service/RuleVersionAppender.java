@@ -116,30 +116,9 @@ public class RuleVersionAppender {
     Instant now = clock.instant();
     RuleVersion next = current.next(request.limit(), request.window(), now, updatedBy);
 
-    // Order matters: the version row goes in first, so the pointer is never
-    // moved to a version that does not exist. The flush forces both the
-    // primary-key check and the @Version check to happen here, where the
-    // retrier can see them, rather than at commit time where it could not.
-    ruleVersionRepository.saveAndFlush(next);
-
-    if (failAfterVersionWrite) {
-      // The version row is now flushed. In a transaction it disappears on
-      // rollback; without one it is already committed and orphans the pointer.
-      throw new IllegalStateException("deliberate failure after version write");
-    }
-
-    rule.applyVersion(next.getVersion());
-    ruleRepository.saveAndFlush(rule);
-
-    // The outbox write belongs here rather than in RuleService.update(), and the
-    // reason is structural. update() is deliberately not transactional - the
-    // retry has to sit outside a transaction boundary - so a write there would
-    // land outside any transaction AND run once per retry attempt, emitting an
-    // event for every failed try. Here it inherits this method's REQUIRES_NEW,
-    // so a losing attempt rolls the event back along with the version row.
-    //
-    // Placed after the deliberate-failure branch above so appendThenFail keeps
-    // testing exactly what it did before.
+    // Publish first so the event carries the values the caller asked for, then
+    // persist. Building the payload up front keeps the event's contents next to
+    // the request that produced them rather than several statements away.
     outboxWriter.writeRuleEvent(
         EventType.RULE_UPDATED,
         OutboxWriter.payload(
@@ -152,6 +131,20 @@ public class RuleVersionAppender {
             updatedBy),
         now,
         TraceContext.currentTraceId());
+
+    // The flush forces both the primary-key check and the @Version check to
+    // happen here, where the retrier can see them, rather than at commit time
+    // where it could not.
+    ruleVersionRepository.saveAndFlush(next);
+
+    if (failAfterVersionWrite) {
+      // The version row is now flushed. In a transaction it disappears on
+      // rollback; without one it is already committed and orphans the pointer.
+      throw new IllegalStateException("deliberate failure after version write");
+    }
+
+    rule.applyVersion(next.getVersion());
+    ruleRepository.saveAndFlush(rule);
 
     return RuleResponse.of(rule, next);
   }
