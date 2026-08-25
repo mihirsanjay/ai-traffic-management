@@ -5,9 +5,14 @@ spring:
   datasource:
     # Matches infra/docker-compose.yml. Throwaway loopback credentials, and
     # deliberately committed - real secrets never live in this repository.
-    url: jdbc:postgresql://localhost:5432/rule_service
-    username: traffic
-    password: traffic
+    #
+    # The ${VAR:default} form keeps local development and every existing test
+    # working untouched while making the value injectable from the environment.
+    # That is what a real deployment needs: the credential arrives from a
+    # secrets manager at runtime rather than being baked into an image.
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/rule_service}
+    username: ${DB_USERNAME:traffic}
+    password: ${DB_PASSWORD:traffic}
     hikari:
       # Every remote call needs an explicit timeout; a pool that waits forever
       # turns a slow database into a total outage.

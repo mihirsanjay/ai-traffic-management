@@ -138,6 +138,33 @@ running.
 - A `Stop` hook (`.claude/hooks/git-reminder.sh`) suggests the next git action.
   It only ever suggests — it never commits, pushes, or tags on its own.
 
+## CI/CD
+
+Five GitHub Actions workflows. Full reference: @docs/cicd.md, decisions in
+@docs/adr/0014-cicd-pipeline-and-supply-chain.md.
+
+- `ci.yml` — `mvn clean verify` on every PR. Blocks merge.
+- `security.yml` — Gitleaks, Trivy, SBOM. PRs plus a **weekly** run, because a
+  CVE disclosed after the last commit never re-triggers a push-based scan.
+- `codeql.yml` — dataflow analysis. Finds injection/traversal, which SpotBugs
+  structurally cannot: the bug is the path between two places, not either one.
+- `release.yml` — release-please maintains a standing *release PR*. Merging that
+  PR is what tags and releases; merging to `main` alone does not.
+- `publish.yml` — on release: builds four images, scans, signs with keyless
+  cosign, attests provenance, pushes to GHCR.
+
+Rules that matter when touching any of this:
+
+- **Never use `pull_request_target`.** It grants repository secrets to workflows
+  running untrusted pull-request code. `claude.yml` uses comment triggers for
+  exactly this reason.
+- **Security gates fail the build**, never merely annotate.
+- **Verify a scanner can still fail** after changing its config. Note that
+  `AKIAIOSFODNN7EXAMPLE` is a documentation placeholder every scanner ignores —
+  testing with it yields a clean scan indistinguishable from a working one.
+- **Versions come from Conventional Commits.** All seven POMs are kept in step
+  by release-please; do not hand-edit a version.
+
 ## Detailed documentation
 
 - @docs/architecture.md — services, flows, module layout, event contracts

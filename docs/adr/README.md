@@ -22,6 +22,7 @@ Format: `NNNN-short-title.md`, numbered sequentially.
 | [0011](0011-thinned-test-strategy.md) | Thinned test strategy and a 0.60 coverage floor | Accepted |
 | 0012 | Cloud target and secrets management | *Pending — written in Phase 6* |
 | [0013](0013-transactional-outbox-with-polling-publisher.md) | Transactional outbox with a polling publisher | Accepted |
+| [0014](0014-cicd-pipeline-and-supply-chain.md) | CI/CD pipeline and supply-chain security | Accepted |
 
 ## Open decisions
 

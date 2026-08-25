@@ -23,6 +23,8 @@
 - [ ] Follows `docs/coding-standards.md`
 - [ ] Conventional Commits format on all commits
 - [ ] No secrets, credentials, or `.env` files committed
+- [ ] Security workflows pass (Gitleaks, Trivy, CodeQL) — see `docs/cicd.md`
+- [ ] No workflow uses `pull_request_target` (prohibited: it exposes secrets to untrusted PR code)
 - [ ] Every remote call has an explicit timeout
 - [ ] Kafka consumers are idempotent (duplicate delivery tested)
 - [ ] No Kafka publish inside a database transaction

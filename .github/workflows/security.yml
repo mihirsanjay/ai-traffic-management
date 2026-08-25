@@ -1,0 +1,122 @@
+# Security scanning: secrets, dependency CVEs, and a software bill of materials.
+#
+# Three triggers, and the third is the one that is easy to forget. A scan that
+# only runs on pull requests never learns about a CVE disclosed *after* the
+# code was merged -- the code has not changed, so nothing re-triggers. The
+# weekly schedule is what turns "vulnerable dependency published on Tuesday"
+# into a finding rather than a surprise months later.
+#
+# Every job here fails the build rather than warning. A security gate that
+# only annotates is a security gate that gets ignored.
+
+name: Security
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    # Mondays at 06:00 UTC. Cron in GitHub Actions is UTC and has no
+    # timezone option, so this is deliberate rather than local time.
+    - cron: '0 6 * * 1'
+
+# Explicitly read-only. The default token permissions are broader than any
+# job here needs, and a scanning workflow has no reason to be able to write.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: '21'
+  JAVA_DISTRIBUTION: 'temurin'
+
+jobs:
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Gitleaks scans history, so it needs history. The default shallow
+          # clone (depth 1) would scan one commit and report nothing, which
+          # looks identical to "no secrets found".
+          fetch-depth: 0
+
+      - name: Scan for committed secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  dependencies:
+    name: Dependency CVEs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          cache: maven
+
+      # Resolves the full dependency tree to disk so the scanner sees the
+      # actual resolved versions, including transitives. Scanning the pom
+      # alone would miss anything pulled in indirectly, which is where
+      # vulnerable dependencies usually hide.
+      - name: Resolve dependencies
+        run: mvn --batch-mode --no-transfer-progress -DskipTests dependency:go-offline
+
+      - name: Scan dependencies for known vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          # Fail the job on a finding. Without this Trivy prints the table
+          # and exits 0, which is a report, not a gate.
+          exit-code: '1'
+          ignore-unfixed: true
+
+  sbom:
+    name: Software bill of materials
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          cache: maven
+
+      - name: Build (skip tests) so the SBOM sees resolved dependencies
+        run: mvn --batch-mode --no-transfer-progress -DskipTests package
+
+      # CycloneDX rather than SPDX: both are open standards and either would
+      # do, but CycloneDX is the more common choice in the JVM ecosystem and
+      # is what most vulnerability tooling ingests without conversion.
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          artifact-name: sbom.cyclonedx.json
+          output-file: sbom.cyclonedx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.cyclonedx.json
+          retention-days: 30

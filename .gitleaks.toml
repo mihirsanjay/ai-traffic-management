@@ -1,0 +1,45 @@
+# Gitleaks configuration.
+#
+# Gitleaks scans the full git history, not just the current diff, because a
+# secret deleted in a later commit is still readable in an earlier one. That
+# is also why the only correct response to a real finding is to ROTATE the
+# credential -- removing the line does not remove it from history.
+#
+# Run locally:  gitleaks detect --source . --config .gitleaks.toml
+
+# Start from the maintained default rule set rather than redefining rules here.
+# Gitleaks ships detectors for hundreds of providers; hand-rolling a subset
+# would silently stop catching whatever it omits.
+[extend]
+useDefault = true
+
+[allowlist]
+description = """
+Deliberately committed local development credentials.
+
+These guard a throwaway Postgres container bound to loopback and are
+documented as such in infra/docker-compose.yml. They are allowlisted by
+path and value rather than by disabling a rule, so a genuine secret
+appearing in these same files is still caught.
+"""
+
+# Local infrastructure credentials, committed on purpose (see the header
+# comment in infra/docker-compose.yml). Narrow regexes rather than blanket
+# path exclusions: an AWS key pasted into one of these files still fails.
+regexes = [
+  '''POSTGRES_PASSWORD:\s*\$\{POSTGRES_PASSWORD:-traffic\}''',
+  '''password:\s*\$\{DB_PASSWORD:traffic\}''',
+  '''password:\s*traffic''',
+  '''username:\s*traffic''',
+]
+
+paths = [
+  # Test fixtures and Testcontainers setup use throwaway credentials that the
+  # container generates or the test hard-codes; none outlive the test JVM.
+  '''.*/src/test/.*''',
+  # Documentation quotes the local credentials when explaining the setup.
+  '''docs/.*\.md''',
+  '''infra/README\.md''',
+  # This file necessarily contains the patterns it allowlists.
+  '''\.gitleaks\.toml''',
+]
