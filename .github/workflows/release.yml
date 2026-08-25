@@ -1,0 +1,60 @@
+# Release automation: version numbers, changelog, tags, and GitHub Releases.
+#
+# How this works, because it is not the obvious design:
+#
+# release-please does NOT tag on every push to main. Instead it maintains a
+# standing "release PR" that accumulates every merged change, keeping the
+# version bump and CHANGELOG.md up to date as commits land. Nothing is
+# released until a human merges that PR. Merging it is what creates the tag
+# and the GitHub Release.
+#
+# That indirection is the point. It fits a protected trunk -- the release is
+# reviewable before it happens, and `main` stays releasable rather than
+# becoming released on every merge. The alternative (semantic-release, which
+# tags immediately on every push) removes the review step entirely.
+#
+# Version numbers come from Conventional Commits, which docs/git-workflow.md
+# already requires:  fix: -> patch,  feat: -> minor,  BREAKING CHANGE: -> major.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  # Deliberately NOT cancel-in-progress. Cancelling a half-finished release
+  # could leave a tag without its GitHub Release, or a release PR in an
+  # inconsistent state. Releases are cheap to queue and expensive to
+  # half-perform.
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: Maintain release PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      # Create/update the release PR, the tag, and the GitHub Release.
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Run release-please
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+    outputs:
+      # Consumed by publish.yml, which builds and pushes images only when a
+      # release actually happened rather than on every merge to main.
+      released: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}

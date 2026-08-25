@@ -1,0 +1,152 @@
+# Publish container images to GitHub Container Registry (GHCR).
+#
+# Runs when a GitHub Release is published -- which happens when the release PR
+# from release.yml is merged -- so images exist only for versions that were
+# deliberately released, never for every merge to main.
+#
+# Each image goes through four steps that together make it trustworthy:
+#
+#   1. BUILD    reproducibly, from the tagged commit
+#   2. SCAN     the built image for CVEs in the base OS and JRE, which a
+#               source-tree scan cannot see
+#   3. SIGN     with cosign, proving the image came from this workflow
+#   4. ATTEST   build provenance, recording *how* it was built
+#
+# Signing and attestation are keyless: they use GitHub's OIDC identity rather
+# than a private key. There is nothing to store, rotate, or leak, which is
+# why this is now the standard approach rather than managing signing keys.
+
+name: Publish
+
+on:
+  release:
+    types: [published]
+  # Manual re-run, for when a publish fails for an environmental reason and
+  # the release itself is fine.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Git tag to build (e.g. v0.4.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  publish:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      # Push to GHCR.
+      packages: write
+      # Mint the OIDC token that keyless signing and attestation depend on.
+      # This is the permission people forget, and its absence produces an
+      # error that does not obviously point back to here.
+      id-token: write
+      # Record the build provenance attestation.
+      attestations: write
+
+    strategy:
+      # One failing image should not cancel the others; seeing all four
+      # results in one run is more useful than failing fast here.
+      fail-fast: false
+      matrix:
+        include:
+          - name: rule-service
+            dockerfile: rule-service/Dockerfile
+          - name: deployment-service
+            dockerfile: deployment-service/Dockerfile
+          - name: orders-service
+            dockerfile: simulators/Dockerfile
+            module: orders-service
+            port: '9001'
+          - name: payments-service
+            dockerfile: simulators/Dockerfile
+            module: payments-service
+            port: '9002'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          # Automatically provided by GitHub; no secret to manage.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.name }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            MODULE=${{ matrix.module }}
+            PORT=${{ matrix.port }}
+          # The Maven dependency download dominates build time. Caching it in
+          # the Actions cache turns a ~4 minute build into well under one on
+          # every run after the first.
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+      # Scans the built image: the Alpine base layers and the JRE, neither of
+      # which appears in a filesystem scan of the source tree. This is the
+      # scan that catches "your base image shipped a vulnerable openssl".
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.name }}@${{ steps.build.outputs.digest }}
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          ignore-unfixed: true
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      # Signs the image digest, not a tag. Tags move; a digest is the
+      # immutable identity of specific bytes, so signing anything else would
+      # let the signature outlive what it signed.
+      - name: Sign image
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.name }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true

@@ -1,0 +1,88 @@
+# Automated dependency updates.
+#
+# Dependabot opens a pull request when a dependency has a newer version. Those
+# PRs go through the same CI and security workflows as any other change, so an
+# update that breaks the build or introduces a CVE cannot merge -- which is
+# what makes automating this safe rather than reckless.
+#
+# Updates are GROUPED. Ungrouped, a Spring Boot bump alone produces dozens of
+# separate PRs, which is enough noise that people stop reading them. Grouping
+# minor and patch updates into one PR per ecosystem keeps them reviewable.
+
+version: 2
+
+updates:
+  # Maven. The root pom is enough for the whole reactor -- Dependabot follows
+  # the module tree from there, so per-module entries would be redundant.
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+    open-pull-requests-limit: 5
+    groups:
+      # Spring Boot's modules are released together and expect to be on the
+      # same version; splitting them across PRs produces combinations that
+      # were never tested upstream.
+      spring:
+        patterns:
+          - 'org.springframework*:*'
+      test-dependencies:
+        patterns:
+          - 'org.testcontainers:*'
+          - 'org.junit*:*'
+          - 'org.assertj:*'
+          - 'org.awaitility:*'
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      # Conventional Commits, so release-please classifies these correctly
+      # rather than treating them as unrecognised and omitting them from the
+      # changelog.
+      prefix: 'chore(deps)'
+      prefix-development: 'chore(deps-dev)'
+    labels:
+      - dependencies
+
+  # The actions used by the workflows in this directory. Pinning matters:
+  # a compromised third-party action runs with whatever permissions the
+  # workflow grants it, so knowing when they change is part of supply-chain
+  # hygiene rather than housekeeping.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: 'ci(deps)'
+    labels:
+      - dependencies
+      - ci
+
+  # Base images in the three Dockerfiles. A base image update is how an OS-level
+  # CVE fix actually reaches the running service.
+  - package-ecosystem: docker
+    directories:
+      - /rule-service
+      - /deployment-service
+      - /simulators
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: 'build(deps)'
+    labels:
+      - dependencies
+      - docker
