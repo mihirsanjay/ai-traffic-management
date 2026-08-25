@@ -1,0 +1,81 @@
+# CodeRabbit configuration.
+#
+# CodeRabbit reviews pull requests automatically. It is free for public
+# repositories and authenticates as a GitHub App, so it needs no API key of
+# ours -- installing the app on the repository is the only setup.
+#
+# The path_instructions below are the part that matters. Without them the
+# review is generic Java advice, much of which this project has deliberately
+# decided against. Pointing it at docs/coding-standards.md makes the review
+# reflect *this* codebase's rules.
+
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+language: en-GB
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  collapse_walkthrough: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+
+  path_instructions:
+    - path: '**/*.java'
+      instructions: >-
+        Review against docs/coding-standards.md. The rules most often broken
+        by plausible-looking code: constructor injection only (never field
+        @Autowired); @ConfigurationProperties rather than scattered @Value;
+        transaction boundaries at the service layer and never spanning a
+        remote call; every remote call carries an explicit timeout; no Kafka
+        publish inside a database transaction; Optional as a return type only,
+        never a field or parameter; switch expressions over sealed types must
+        not have a default branch. Comments explain why, not what. Flag any
+        catch block that swallows an exception without a comment justifying
+        why continuing is correct.
+
+    - path: 'rule-service/**/*.java'
+      instructions: >-
+        Rules are versioned and never mutated (ADR 0007): an update appends a
+        row and moves a pointer. Flag any UPDATE that overwrites a stored rule
+        version. Version increment uses optimistic locking with bounded,
+        jittered retry (ADR 0008); the retry must sit outside the transaction
+        boundary. Outbox writes must join the caller's transaction
+        (Propagation.MANDATORY) -- see ADR 0013.
+
+    - path: 'deployment-service/**/*.java'
+      instructions: >-
+        Kafka delivery is at-least-once, so every consumer path must be
+        idempotent, keyed on eventId, and must check its ledger BEFORE
+        inserting rather than catching the constraint violation -- by the time
+        Postgres raises 23505 the transaction is already rollback-only, which
+        produces an infinite redelivery loop (ADR 0013). Deployments are
+        append-only: a rollback writes a new row rather than editing history.
+
+    - path: 'simulators/**/*.java'
+      instructions: >-
+        These are deliberately dumb load targets. They must have ZERO
+        awareness of the platform: no rule logic, no throttling code, and no
+        dependency on the common/ module or any platform service. Flag any
+        import that couples a simulator to the platform.
+
+    - path: '**/*.yml'
+      instructions: >-
+        Check that no real credential is committed. Local throwaway
+        credentials are acceptable and expected (see .gitleaks.toml) but must
+        be injectable via ${VAR:default}. In GitHub workflows, flag any use of
+        pull_request_target -- it is prohibited in this repository because it
+        exposes secrets to untrusted pull-request code.
+
+  tools:
+    github-checks:
+      enabled: true
+
+chat:
+  auto_reply: true
